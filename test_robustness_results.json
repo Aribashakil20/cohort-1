@@ -1,0 +1,182 @@
+[
+  {
+    "image": "image copy 2.png",
+    "condition": "original",
+    "description": "Normal image, no changes",
+    "viewer_count": 5,
+    "male": 2,
+    "female": 3,
+    "engagement": 75,
+    "inference_s": 81.9
+  },
+  {
+    "image": "image copy 2.png",
+    "condition": "low_brightness",
+    "description": "30% brightness \u2014 dim room",
+    "viewer_count": 5,
+    "male": 2,
+    "female": 3,
+    "engagement": 75,
+    "inference_s": 38.4
+  },
+  {
+    "image": "image copy 2.png",
+    "condition": "blurry",
+    "description": "Heavy blur \u2014 unfocused camera",
+    "viewer_count": 5,
+    "male": 2,
+    "female": 3,
+    "engagement": 75,
+    "inference_s": 35.5
+  },
+  {
+    "image": "image copy.png",
+    "condition": "original",
+    "description": "Normal image, no changes",
+    "viewer_count": 4,
+    "male": 1,
+    "female": 3,
+    "engagement": 75,
+    "inference_s": 36.7
+  },
+  {
+    "image": "image copy.png",
+    "condition": "low_brightness",
+    "description": "30% brightness \u2014 dim room",
+    "viewer_count": 4,
+    "male": 2,
+    "female": 2,
+    "engagement": 70,
+    "inference_s": 37.7
+  },
+  {
+    "image": "image copy.png",
+    "condition": "blurry",
+    "description": "Heavy blur \u2014 unfocused camera",
+    "viewer_count": 4,
+    "male": 2,
+    "female": 2,
+    "engagement": 70,
+    "inference_s": 26.3
+  },
+  {
+    "image": "image.png",
+    "condition": "original",
+    "description": "Normal image, no changes",
+    "viewer_count": 2,
+    "male": 1,
+    "female": 1,
+    "engagement": 65,
+    "inference_s": 26.1
+  },
+  {
+    "image": "image.png",
+    "condition": "low_brightness",
+    "description": "30% brightness \u2014 dim room",
+    "viewer_count": 2,
+    "male": 1,
+    "female": 1,
+    "engagement": 65,
+    "inference_s": 27.6
+  },
+  {
+    "image": "image.png",
+    "condition": "blurry",
+    "description": "Heavy blur \u2014 unfocused camera",
+    "viewer_count": 2,
+    "male": 1,
+    "female": 1,
+    "engagement": 65,
+    "inference_s": 34.6
+  },
+  {
+    "image": "OIP (1).jpg",
+    "condition": "original",
+    "description": "Normal image, no changes",
+    "viewer_count": 4,
+    "male": 1,
+    "female": 3,
+    "engagement": 75,
+    "inference_s": 41.6
+  },
+  {
+    "image": "OIP (1).jpg",
+    "condition": "low_brightness",
+    "description": "30% brightness \u2014 dim room",
+    "viewer_count": 4,
+    "male": 2,
+    "female": 2,
+    "engagement": 70,
+    "inference_s": 46.9
+  },
+  {
+    "image": "OIP (1).jpg",
+    "condition": "blurry",
+    "description": "Heavy blur \u2014 unfocused camera",
+    "viewer_count": 4,
+    "male": 1,
+    "female": 3,
+    "engagement": 75,
+    "inference_s": 70.4
+  },
+  {
+    "image": "OIP.jpg",
+    "condition": "original",
+    "description": "Normal image, no changes",
+    "viewer_count": 5,
+    "male": 3,
+    "female": 2,
+    "engagement": 75,
+    "inference_s": 45.4
+  },
+  {
+    "image": "OIP.jpg",
+    "condition": "low_brightness",
+    "description": "30% brightness \u2014 dim room",
+    "viewer_count": 5,
+    "male": 0,
+    "female": 5,
+    "engagement": 75,
+    "inference_s": 30.1
+  },
+  {
+    "image": "OIP.jpg",
+    "condition": "blurry",
+    "description": "Heavy blur \u2014 unfocused camera",
+    "viewer_count": 5,
+    "male": 2,
+    "female": 3,
+    "engagement": 75,
+    "inference_s": 29.3
+  },
+  {
+    "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+    "condition": "original",
+    "description": "Normal image, no changes",
+    "viewer_count": 4,
+    "male": 2,
+    "female": 2,
+    "engagement": 70,
+    "inference_s": 265.3
+  },
+  {
+    "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+    "condition": "low_brightness",
+    "description": "30% brightness \u2014 dim room",
+    "viewer_count": 4,
+    "male": 2,
+    "female": 2,
+    "engagement": 70,
+    "inference_s": 92.7
+  },
+  {
+    "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+    "condition": "blurry",
+    "description": "Heavy blur \u2014 unfocused camera",
+    "viewer_count": 4,
+    "male": 1,
+    "female": 3,
+    "engagement": 75,
+    "inference_s": 70.4
+  }
+]

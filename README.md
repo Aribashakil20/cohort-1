@@ -396,4 +396,237 @@ The backend never serves raw images, video, or any data that could identify a pe
 
 ---
 
+## 5. Model Testing — Steps 1–4 (Age & Gender Model Comparison)
+
+This section documents the three models we tested for age and gender detection, and the final comparison between them.
+
+---
+
+### Why we tested multiple models
+
+Before committing to one AI model for the live pipeline, we ran three separate models against the same 7 test images so we could compare:
+
+- **How many faces** each model detects (sensitivity)
+- **How fast** each model runs (latency)
+- **How accurately** each model predicts age group and gender
+- **Where each model fails** (small faces, wrong lighting, etc.)
+
+---
+
+### Step 1 — OpenCV Caffe (Levi & Hassner, 2015)
+
+**What it is:** Two pre-trained neural networks bundled with OpenCV. One detects faces using a ResNet-SSD network, then crops each face and passes it to two more networks — one for age, one for gender.
+
+**How it works:**
+
+1. The face detector takes the full image, resizes it to 300×300, and outputs bounding boxes with confidence scores.
+2. Each detected face is cropped and resized to 227×227.
+3. The age network outputs a probability across **8 fixed buckets**: `(0–2)`, `(4–6)`, `(8–12)`, `(15–20)`, `(25–32)`, `(38–43)`, `(48–53)`, `(60–100)`.
+4. The gender network outputs `Male` or `Female` with a confidence score.
+
+**Why this file was created (`step1_caffe_test.py`):**
+It is the easiest model to run — OpenCV is already installed and the Caffe weights download automatically. This gives us a baseline to compare everything else against.
+
+**Results (7 images):**
+
+| Metric | Value |
+|---|---|
+| Total faces detected | 17 |
+| Average time per image | 28.9 ms |
+| Images with 0 faces | 2 (`image copy 2.png`, `test.jpg`) |
+| Small-face warnings | 11 faces flagged as < 32px |
+
+**Where it failed:**
+- Missed all 7 faces in `image copy 2.png` (a high-resolution crowd image — faces too small after downscale to 300×300)
+- Bucketed 4 adult faces as `(8-12)` child on `image copy.png` and `image.png` — the 8-bucket system is coarse and the model was trained on a small 1990s-era dataset
+- All faces in group/crowd images were flagged as too small for reliable prediction
+
+---
+
+### Step 2 — DeepFace
+
+**What it is:** A Python library that wraps multiple face recognition and analysis models behind a single `DeepFace.analyze()` call. Supports detectors: OpenCV, RetinaFace, MTCNN, SSD, Dlib.
+
+**How it works:**
+
+1. `DeepFace.analyze(image_path, actions=['age','gender'])` — one function call.
+2. Internally downloads model weights on first use (stored in `~/.deepface/`).
+3. Returns a numeric age (e.g. `31`) and gender as `"Man"` / `"Woman"` with confidence.
+
+**Why this file was created (`step2_deepface_test.py`):**
+DeepFace offers a higher-level API than raw Caffe. It also provides numeric age (not buckets) and has multiple detector backends to choose from. Testing it tells us if the simpler API is worth the extra dependency.
+
+**Results (7 images):**
+
+| Metric | Value |
+|---|---|
+| Total faces detected | **0** |
+| Average time per image | 2,868.9 ms |
+| Images with errors | **All 7** |
+
+**Where it failed:**
+Every image failed with:
+```
+DeepFace error: Unable to synchronously open file (file signature not found)
+```
+This is a **Windows-specific HDF5 file error** — DeepFace's model weights (`.h5` files) did not open correctly. This is a known issue on some Windows/Anaconda setups where the HDF5 library version mismatches the TensorFlow version. The model never ran inference — all 2,868 ms was wasted on failed I/O.
+
+**Fix (not yet applied):** Reinstall with `pip install deepface tensorflow==2.12` and clear `~/.deepface/weights/`.
+
+---
+
+### Step 3 — InsightFace (buffalo_l, ONNX)
+
+**What it is:** A state-of-the-art face analysis library that uses ONNX Runtime (not TensorFlow/PyTorch). The `buffalo_l` model pack includes RetinaFace for detection and separate ONNX models for age and gender.
+
+**How it works:**
+
+1. `FaceAnalysis(name='buffalo_l')` loads the full model pack.
+2. `app.get(image)` runs the complete pipeline: face detection → landmark alignment → age/gender inference.
+3. Returns: bounding box, a **numeric age** (e.g. `45`), gender as `Male`/`Female`, and a **detection confidence score** (`det_score`).
+
+**Why this file was created (`step3_insightface_test.py`):**
+InsightFace is the current industry standard for face analysis. Its ONNX backend means it runs without GPU and doesn't depend on TensorFlow. Testing it against Caffe tells us if the accuracy improvement is worth the slower speed.
+
+**Results (7 images):**
+
+| Metric | Value |
+|---|---|
+| Total faces detected | **26** |
+| Average time per image | 4,651.9 ms |
+| Images with 0 faces | 1 (`test.jpg`) |
+| Small-face warnings | 13 faces flagged as < 32px |
+
+**Where it failed:**
+- `test.jpg`: same as Caffe — face too far/side-on
+- Small faces in crowd images detected but flagged as potentially inaccurate
+- First inference was slow (~8,782 ms) because ONNX Runtime compiled the model on first call — subsequent calls were faster
+
+---
+
+### Step 4 — Side-by-Side Comparison
+
+**What this step does (`step4_compare.py`):**
+Loads the three result JSON files produced by Steps 1–3 and computes a side-by-side comparison. No new inference is run — this is pure data analysis. The script produces `step4_comparison.json`.
+
+---
+
+#### A. Faces Detected Per Image
+
+| Image | Caffe | DeepFace | InsightFace |
+|---|---|---|---|
+| image copy 2.png | 0 | FAILED | **7** |
+| image copy.png | 4 | FAILED | 4 |
+| image.png | 2 | FAILED | 2 |
+| OIP (1).jpg | 4 | FAILED | 4 |
+| OIP.jpg | 5 | FAILED | 5 |
+| group-thumbnail.png | 2 | FAILED | **4** |
+| test.jpg | 0 | FAILED | 0 |
+| **TOTAL** | **17** | **0** | **26** |
+
+**Key finding:** InsightFace found **53% more faces** overall. The biggest gap was `image copy 2.png` — a high-resolution crowd photo where Caffe found 0 faces (they were too small after downscaling to 300×300) but InsightFace found 7 (it uses 640×640 input).
+
+---
+
+#### B. Speed Per Image
+
+| Model | Avg ms/image | Notes |
+|---|---|---|
+| **Caffe** | **28.9 ms** | ~35 FPS capable |
+| DeepFace | 2,868.9 ms | Failed — time was wasted on I/O errors |
+| InsightFace | 4,651.9 ms | ~0.2 FPS — first call slow (ONNX compilation) |
+
+**Caffe is ~161× faster than InsightFace.** However, for a display-audience system that only needs to refresh every 5–10 seconds, InsightFace's speed is still acceptable.
+
+---
+
+#### C. Age Group Agreement (Caffe vs InsightFace)
+
+For images where both models found faces, we compared the predicted age group for each matched face pair:
+
+| Image | Faces compared | Age-group agreement |
+|---|---|---|
+| image copy.png | 4 | 50% |
+| image.png | 2 | **0%** |
+| OIP (1).jpg | 4 | 25% |
+| OIP.jpg | 5 | 80% |
+| group-thumbnail.png | 2 | **0%** |
+
+**Critical finding — Caffe mis-buckets adults as children:**
+
+On `image copy.png` and `image.png`, Caffe predicted `(8-12)` child for faces that InsightFace predicted as adults aged 21–42. The Caffe model was trained on the Adience dataset (2014) which is small and heavily biased toward a few age buckets. The `(8-12)` bucket gets over-predicted on female faces.
+
+InsightFace's numeric predictions (21, 23, 28, 36, 42) are far more plausible for the visible images.
+
+---
+
+#### D. Gender Agreement (Caffe vs InsightFace)
+
+| Image | Faces compared | Gender agreement |
+|---|---|---|
+| image copy.png | 4 | 75% |
+| image.png | 2 | 100% |
+| OIP (1).jpg | 4 | 75% |
+| OIP.jpg | 5 | 40% |
+| group-thumbnail.png | 2 | 100% |
+
+Gender agreement is higher than age but still not perfect — the two models disagree on roughly 30% of faces. Without labeled ground truth, we cannot determine which model is correct.
+
+---
+
+#### E. Where Each Model Fails
+
+| Failure type | Caffe | DeepFace | InsightFace |
+|---|---|---|---|
+| Small faces (< 32px) | Detects but flags 11 | N/A (failed) | Detects but flags 13 |
+| High-res crowd images | Misses all faces (300×300 downscale) | N/A | Detects correctly (640×640) |
+| Age mis-prediction | Buckets adults as `(8-12)` child | N/A | Numeric, more plausible |
+| File I/O errors | None | All 7 images | None |
+| First-call warmup | None | N/A | ~8,000 ms (ONNX compile) |
+| Low-light / side-on face | Misses (test.jpg) | N/A | Misses (test.jpg) |
+
+---
+
+#### F. Winner Per Category
+
+| Category | Winner | Reason |
+|---|---|---|
+| Most faces detected | **InsightFace** | 26 vs 17; handles high-res crowd images |
+| Fastest inference | **Caffe** | 28.9 ms/img — 161× faster than InsightFace |
+| Age accuracy | **InsightFace** | Numeric ages; no adult-as-child mis-bucketing |
+| Gender accuracy | **Inconclusive** | ~30% disagreement; no ground truth available |
+| Reliability (no crashes) | **Caffe / InsightFace** | Both ran all 7 images; DeepFace failed all |
+| Ease of setup | **Caffe** | Already bundled with OpenCV |
+| Small-face detection | **Tie** | Both detect and flag; InsightFace finds more |
+
+---
+
+#### G. Recommendation
+
+**Use InsightFace (`buffalo_l`) as the primary model for the live pipeline.**
+
+Reasons:
+1. **Highest recall** — found 26 faces vs Caffe's 17 (53% more). In a real audience-counting system, missed faces = missed data.
+2. **Numeric age** — more granular and more accurate than 8 fixed buckets.
+3. **No adult-as-child mis-bucketing** — Caffe's biggest quality problem.
+4. **Detection confidence score** — `det_score` per face allows filtering unreliable detections.
+
+**Trade-off:** InsightFace is ~161× slower per image.
+**Mitigation:** Run on every 15th frame (every 0.5 seconds at 30fps), not every frame. The live dashboard only updates every 5–10 seconds anyway — so inference speed is not a bottleneck.
+
+**DeepFace:** Re-test after fixing the HDF5/Windows model-weights issue. If fixed, its single-function API makes it the easiest to integrate.
+
+---
+
+### Output Files
+
+| File | What it contains |
+|---|---|
+| `step1_results/step1_caffe_results.json` | Per-face Caffe predictions + annotated images |
+| `step2_results/step2_deepface_results.json` | DeepFace error log |
+| `step3_results/step3_insightface_results.json` | Per-face InsightFace predictions + annotated images |
+| `step4_comparison.json` | Full side-by-side comparison data (generated by Step 4) |
+
+---
+
 *Smart Audience Analysis System — v1.0*

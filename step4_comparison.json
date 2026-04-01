@@ -1,0 +1,511 @@
+{
+  "step": 4,
+  "title": "Model Comparison — Caffe vs DeepFace vs InsightFace",
+  "summary": {
+    "caffe": {
+      "total_faces": 17,
+      "avg_ms": 28.9,
+      "status": "success"
+    },
+    "deepface": {
+      "total_faces": 0,
+      "avg_ms": 2868.9,
+      "status": "failed_all_images"
+    },
+    "insightface": {
+      "total_faces": 26,
+      "avg_ms": 4651.9,
+      "status": "success"
+    }
+  },
+  "per_image": [
+    {
+      "image": "OIP (1).jpg",
+      "caffe_faces": 4,
+      "deepface_faces": 0,
+      "insightface_faces": 4,
+      "caffe_ms": 21.9,
+      "insightface_ms": 3303.5
+    },
+    {
+      "image": "OIP.jpg",
+      "caffe_faces": 5,
+      "deepface_faces": 0,
+      "insightface_faces": 5,
+      "caffe_ms": 23.1,
+      "insightface_ms": 7054.5
+    },
+    {
+      "image": "image copy 2.png",
+      "caffe_faces": 0,
+      "deepface_faces": 0,
+      "insightface_faces": 7,
+      "caffe_ms": 58.7,
+      "insightface_ms": 8782.3
+    },
+    {
+      "image": "image copy.png",
+      "caffe_faces": 4,
+      "deepface_faces": 0,
+      "insightface_faces": 4,
+      "caffe_ms": 27.7,
+      "insightface_ms": 4410.0
+    },
+    {
+      "image": "image.png",
+      "caffe_faces": 2,
+      "deepface_faces": 0,
+      "insightface_faces": 2,
+      "caffe_ms": 19.9,
+      "insightface_ms": 3230.3
+    },
+    {
+      "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+      "caffe_faces": 2,
+      "deepface_faces": 0,
+      "insightface_faces": 4,
+      "caffe_ms": 26.3,
+      "insightface_ms": 5413.9
+    },
+    {
+      "image": "test.jpg",
+      "caffe_faces": 0,
+      "deepface_faces": 0,
+      "insightface_faces": 0,
+      "caffe_ms": 24.7,
+      "insightface_ms": 368.7
+    }
+  ],
+  "age_gender_comparison": [
+    {
+      "image": "OIP (1).jpg",
+      "faces_compared": 4,
+      "gender_agreement_pct": 75.0,
+      "age_agreement_pct": 25.0,
+      "faces": [
+        {
+          "face": 1,
+          "caffe_gender": "Male",
+          "insightface_gender": "Male",
+          "gender_match": true,
+          "caffe_age_bucket": "(15-20)",
+          "insightface_age": 26,
+          "caffe_age_group": "youth",
+          "insightface_age_group": "adult",
+          "age_group_match": false
+        },
+        {
+          "face": 2,
+          "caffe_gender": "Male",
+          "insightface_gender": "Female",
+          "gender_match": false,
+          "caffe_age_bucket": "(25-32)",
+          "insightface_age": 35,
+          "caffe_age_group": "adult",
+          "insightface_age_group": "adult",
+          "age_group_match": true
+        },
+        {
+          "face": 3,
+          "caffe_gender": "Male",
+          "insightface_gender": "Male",
+          "gender_match": true,
+          "caffe_age_bucket": "(38-43)",
+          "insightface_age": 23,
+          "caffe_age_group": "adult",
+          "insightface_age_group": "youth",
+          "age_group_match": false
+        },
+        {
+          "face": 4,
+          "caffe_gender": "Male",
+          "insightface_gender": "Male",
+          "gender_match": true,
+          "caffe_age_bucket": "(48-53)",
+          "insightface_age": 35,
+          "caffe_age_group": "middle_aged",
+          "insightface_age_group": "adult",
+          "age_group_match": false
+        }
+      ]
+    },
+    {
+      "image": "OIP.jpg",
+      "faces_compared": 5,
+      "gender_agreement_pct": 40.0,
+      "age_agreement_pct": 80.0,
+      "faces": [
+        {
+          "face": 1,
+          "caffe_gender": "Female",
+          "insightface_gender": "Female",
+          "gender_match": true,
+          "caffe_age_bucket": "(25-32)",
+          "insightface_age": 31,
+          "caffe_age_group": "adult",
+          "insightface_age_group": "adult",
+          "age_group_match": true
+        },
+        {
+          "face": 2,
+          "caffe_gender": "Male",
+          "insightface_gender": "Female",
+          "gender_match": false,
+          "caffe_age_bucket": "(25-32)",
+          "insightface_age": 29,
+          "caffe_age_group": "adult",
+          "insightface_age_group": "adult",
+          "age_group_match": true
+        },
+        {
+          "face": 3,
+          "caffe_gender": "Female",
+          "insightface_gender": "Male",
+          "gender_match": false,
+          "caffe_age_bucket": "(25-32)",
+          "insightface_age": 39,
+          "caffe_age_group": "adult",
+          "insightface_age_group": "adult",
+          "age_group_match": true
+        },
+        {
+          "face": 4,
+          "caffe_gender": "Female",
+          "insightface_gender": "Male",
+          "gender_match": false,
+          "caffe_age_bucket": "(15-20)",
+          "insightface_age": 37,
+          "caffe_age_group": "youth",
+          "insightface_age_group": "adult",
+          "age_group_match": false
+        },
+        {
+          "face": 5,
+          "caffe_gender": "Male",
+          "insightface_gender": "Male",
+          "gender_match": true,
+          "caffe_age_bucket": "(25-32)",
+          "insightface_age": 44,
+          "caffe_age_group": "adult",
+          "insightface_age_group": "adult",
+          "age_group_match": true
+        }
+      ]
+    },
+    {
+      "image": "image copy.png",
+      "faces_compared": 4,
+      "gender_agreement_pct": 75.0,
+      "age_agreement_pct": 50.0,
+      "faces": [
+        {
+          "face": 1,
+          "caffe_gender": "Female",
+          "insightface_gender": "Female",
+          "gender_match": true,
+          "caffe_age_bucket": "(8-12)",
+          "insightface_age": 28,
+          "caffe_age_group": "child",
+          "insightface_age_group": "adult",
+          "age_group_match": false
+        },
+        {
+          "face": 2,
+          "caffe_gender": "Female",
+          "insightface_gender": "Female",
+          "gender_match": true,
+          "caffe_age_bucket": "(8-12)",
+          "insightface_age": 23,
+          "caffe_age_group": "child",
+          "insightface_age_group": "youth",
+          "age_group_match": false
+        },
+        {
+          "face": 3,
+          "caffe_gender": "Male",
+          "insightface_gender": "Male",
+          "gender_match": true,
+          "caffe_age_bucket": "(25-32)",
+          "insightface_age": 33,
+          "caffe_age_group": "adult",
+          "insightface_age_group": "adult",
+          "age_group_match": true
+        },
+        {
+          "face": 4,
+          "caffe_gender": "Male",
+          "insightface_gender": "Female",
+          "gender_match": false,
+          "caffe_age_bucket": "(15-20)",
+          "insightface_age": 21,
+          "caffe_age_group": "youth",
+          "insightface_age_group": "youth",
+          "age_group_match": true
+        }
+      ]
+    },
+    {
+      "image": "image.png",
+      "faces_compared": 2,
+      "gender_agreement_pct": 100.0,
+      "age_agreement_pct": 0.0,
+      "faces": [
+        {
+          "face": 1,
+          "caffe_gender": "Female",
+          "insightface_gender": "Female",
+          "gender_match": true,
+          "caffe_age_bucket": "(8-12)",
+          "insightface_age": 42,
+          "caffe_age_group": "child",
+          "insightface_age_group": "adult",
+          "age_group_match": false
+        },
+        {
+          "face": 2,
+          "caffe_gender": "Female",
+          "insightface_gender": "Female",
+          "gender_match": true,
+          "caffe_age_bucket": "(8-12)",
+          "insightface_age": 36,
+          "caffe_age_group": "child",
+          "insightface_age_group": "adult",
+          "age_group_match": false
+        }
+      ]
+    },
+    {
+      "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+      "faces_compared": 2,
+      "gender_agreement_pct": 100.0,
+      "age_agreement_pct": 0.0,
+      "faces": [
+        {
+          "face": 1,
+          "caffe_gender": "Male",
+          "insightface_gender": "Male",
+          "gender_match": true,
+          "caffe_age_bucket": "(4-6)",
+          "insightface_age": 43,
+          "caffe_age_group": "child",
+          "insightface_age_group": "adult",
+          "age_group_match": false
+        },
+        {
+          "face": 2,
+          "caffe_gender": "Male",
+          "insightface_gender": "Male",
+          "gender_match": true,
+          "caffe_age_bucket": "(4-6)",
+          "insightface_age": 40,
+          "caffe_age_group": "child",
+          "insightface_age_group": "adult",
+          "age_group_match": false
+        }
+      ]
+    }
+  ],
+  "failure_log": {
+    "caffe": [
+      {
+        "image": "OIP (1).jpg",
+        "reason": "Face #1: too small (27x31px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "OIP (1).jpg",
+        "reason": "Face #2: too small (25x31px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "OIP (1).jpg",
+        "reason": "Face #3: too small (27x30px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "OIP (1).jpg",
+        "reason": "Face #4: too small (26x36px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "Face #1: too small (31x41px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "Face #2: too small (29x40px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "Face #3: too small (25x35px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "Face #4: too small (30x42px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "Face #5: too small (26x34px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "image copy 2.png",
+        "reason": "No faces detected — person may be too far, side-on, or low lighting"
+      },
+      {
+        "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+        "reason": "Face #1: too small (27x33px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+        "reason": "Face #2: too small (24x36px) — age/gender may be inaccurate"
+      },
+      {
+        "image": "test.jpg",
+        "reason": "No faces detected — person may be too far, side-on, or low lighting"
+      }
+    ],
+    "deepface": [
+      {
+        "image": "OIP (1).jpg",
+        "reason": "DeepFace error: Unable to synchronously open file (file signature not found)"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "DeepFace error: Unable to synchronously open file (file signature not found)"
+      },
+      {
+        "image": "image copy 2.png",
+        "reason": "DeepFace error: Unable to synchronously open file (file signature not found)"
+      },
+      {
+        "image": "image copy.png",
+        "reason": "DeepFace error: Unable to synchronously open file (file signature not found)"
+      },
+      {
+        "image": "image.png",
+        "reason": "DeepFace error: Unable to synchronously open file (file signature not found)"
+      },
+      {
+        "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+        "reason": "DeepFace error: Unable to synchronously open file (file signature not found)"
+      },
+      {
+        "image": "test.jpg",
+        "reason": "DeepFace error: Unable to synchronously open file (file signature not found)"
+      }
+    ],
+    "insightface": [
+      {
+        "image": "OIP (1).jpg",
+        "reason": "Face #1: small face (22x31px) — attributes may be inaccurate"
+      },
+      {
+        "image": "OIP (1).jpg",
+        "reason": "Face #2: small face (25x31px) — attributes may be inaccurate"
+      },
+      {
+        "image": "OIP (1).jpg",
+        "reason": "Face #3: small face (23x30px) — attributes may be inaccurate"
+      },
+      {
+        "image": "OIP (1).jpg",
+        "reason": "Face #4: small face (26x35px) — attributes may be inaccurate"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "Face #1: small face (27x37px) — attributes may be inaccurate"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "Face #2: small face (30x40px) — attributes may be inaccurate"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "Face #3: small face (28x39px) — attributes may be inaccurate"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "Face #4: small face (30x40px) — attributes may be inaccurate"
+      },
+      {
+        "image": "OIP.jpg",
+        "reason": "Face #5: small face (28x37px) — attributes may be inaccurate"
+      },
+      {
+        "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+        "reason": "Face #1: small face (25x33px) — attributes may be inaccurate"
+      },
+      {
+        "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+        "reason": "Face #2: small face (27x31px) — attributes may be inaccurate"
+      },
+      {
+        "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+        "reason": "Face #3: small face (19x27px) — attributes may be inaccurate"
+      },
+      {
+        "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+        "reason": "Face #4: small face (22x26px) — attributes may be inaccurate"
+      },
+      {
+        "image": "test.jpg",
+        "reason": "No faces detected — may be too far, side-on, or low lighting"
+      }
+    ]
+  },
+  "winners": [
+    {
+      "category": "Most faces detected (sensitivity)",
+      "winner": "InsightFace",
+      "caffe": 17,
+      "deepface": 0,
+      "insightface": 26,
+      "note": "InsightFace found 26 faces vs Caffe's 17. DeepFace failed entirely."
+    },
+    {
+      "category": "Fastest per image (speed)",
+      "winner": "Caffe",
+      "caffe": "28.9 ms",
+      "deepface": "2868.9 ms (failed)",
+      "insightface": "4651.9 ms",
+      "note": "Caffe at 28.9 ms/img is ~161× faster than InsightFace."
+    },
+    {
+      "category": "Small-face detection",
+      "winner": "Tie (Caffe / InsightFace)",
+      "caffe": "Detected but flagged ~25–31px faces as inaccurate",
+      "deepface": "Failed — no faces",
+      "insightface": "Detected same small faces, also flagged",
+      "note": "Both detected small faces; InsightFace found more of them."
+    },
+    {
+      "category": "Age accuracy (on large, clear faces)",
+      "winner": "InsightFace",
+      "caffe": "Bucketed — misclassified adults as children in some images",
+      "deepface": "N/A — failed",
+      "insightface": "Numeric — predicted adult ages (21–45) that look more plausible",
+      "note": "Caffe bucketed several adult faces as '(8-12)' child; InsightFace gave numeric ages in the 20s–40s."
+    },
+    {
+      "category": "Gender accuracy (on large faces)",
+      "winner": "Inconclusive — no ground truth",
+      "caffe": "High confidence on clear faces (0.98+)",
+      "deepface": "N/A — failed",
+      "insightface": "Confident but differed from Caffe on several faces",
+      "note": "Caffe and InsightFace disagreed on ~30% of faces. Without labeled ground truth we can't determine who is correct."
+    },
+    {
+      "category": "Ease of setup",
+      "winner": "Caffe",
+      "caffe": "Model files auto-downloaded, zero extra pip installs",
+      "deepface": "pip install deepface — but file I/O bug blocked all inference",
+      "insightface": "pip install insightface onnxruntime — worked after install",
+      "note": "Caffe needs only opencv-python which is already installed."
+    },
+    {
+      "category": "Reliability (no crashes)",
+      "winner": "Caffe / InsightFace (tie)",
+      "caffe": "Ran on all 7 images successfully",
+      "deepface": "Crashed on all 7 images — file signature error",
+      "insightface": "Ran on all 7 images successfully",
+      "note": "DeepFace's 'Unable to synchronously open file' error is likely an HDF5/model-weights issue on Windows."
+    }
+  ],
+  "recommendation": "Use InsightFace (buffalo_l) as the primary age+gender model.\n  Reasons:\n  1. Highest face recall  — found 26 faces vs Caffe's 17 (53% more)\n  2. Numeric age output   — more granular than 8 fixed buckets\n  3. No mis-bucketing     — did not label adult faces as children\n  4. Confidence score     — det_score per face allows filtering weak detections\n\n  Trade-off: InsightFace is ~161× slower per image (4652 ms vs 29 ms).\n  Mitigation: Run on every Nth frame, not every frame. For a live display\n  audience system, refreshing every 5–10 seconds is fine — not every frame.\n\n  DeepFace: Fix the HDF5 model-weights download issue on Windows and re-test.\n  Its API (single function call) is the simplest of the three."
+}
