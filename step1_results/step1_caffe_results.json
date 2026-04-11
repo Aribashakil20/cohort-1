@@ -1,0 +1,386 @@
+{
+  "model": "OpenCV Caffe (Levi & Hassner)",
+  "total_images": 7,
+  "total_faces": 17,
+  "avg_detection_ms": 28.9,
+  "results": [
+    {
+      "image": "image copy 2.png",
+      "faces_detected": 0,
+      "detection_time_ms": 58.7,
+      "people": [],
+      "challenges": [
+        "No faces detected \u2014 person may be too far, side-on, or low lighting"
+      ]
+    },
+    {
+      "image": "image copy.png",
+      "faces_detected": 4,
+      "detection_time_ms": 27.7,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            555,
+            576,
+            663,
+            728
+          ],
+          "face_size_px": "108x152",
+          "detection_conf": 0.997,
+          "gender": "Female",
+          "gender_conf": 0.917,
+          "age_bucket": "(8-12)",
+          "age_conf": 0.995,
+          "age_group": "child",
+          "ad_category": "Toys / Girls Games",
+          "inference_ms": 64.0
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            352,
+            461,
+            469,
+            612
+          ],
+          "face_size_px": "117x151",
+          "detection_conf": 0.994,
+          "gender": "Female",
+          "gender_conf": 0.988,
+          "age_bucket": "(8-12)",
+          "age_conf": 0.909,
+          "age_group": "child",
+          "ad_category": "Toys / Girls Games",
+          "inference_ms": 19.7
+        },
+        {
+          "face_id": 3,
+          "bbox": [
+            749,
+            471,
+            874,
+            641
+          ],
+          "face_size_px": "125x170",
+          "detection_conf": 0.993,
+          "gender": "Male",
+          "gender_conf": 1.0,
+          "age_bucket": "(25-32)",
+          "age_conf": 0.917,
+          "age_group": "adult",
+          "ad_category": "Cars / Finance",
+          "inference_ms": 19.2
+        },
+        {
+          "face_id": 4,
+          "bbox": [
+            84,
+            510,
+            209,
+            673
+          ],
+          "face_size_px": "125x163",
+          "detection_conf": 0.985,
+          "gender": "Male",
+          "gender_conf": 0.723,
+          "age_bucket": "(15-20)",
+          "age_conf": 0.682,
+          "age_group": "youth",
+          "ad_category": "Gaming / Sports",
+          "inference_ms": 18.7
+        }
+      ],
+      "challenges": []
+    },
+    {
+      "image": "image.png",
+      "faces_detected": 2,
+      "detection_time_ms": 19.9,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            489,
+            395,
+            649,
+            601
+          ],
+          "face_size_px": "160x206",
+          "detection_conf": 0.997,
+          "gender": "Female",
+          "gender_conf": 0.777,
+          "age_bucket": "(8-12)",
+          "age_conf": 0.664,
+          "age_group": "child",
+          "ad_category": "Toys / Girls Games",
+          "inference_ms": 16.7
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            168,
+            413,
+            329,
+            607
+          ],
+          "face_size_px": "161x194",
+          "detection_conf": 0.996,
+          "gender": "Female",
+          "gender_conf": 0.985,
+          "age_bucket": "(8-12)",
+          "age_conf": 0.695,
+          "age_group": "child",
+          "ad_category": "Toys / Girls Games",
+          "inference_ms": 19.9
+        }
+      ],
+      "challenges": []
+    },
+    {
+      "image": "OIP (1).jpg",
+      "faces_detected": 4,
+      "detection_time_ms": 21.9,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            141,
+            56,
+            168,
+            87
+          ],
+          "face_size_px": "27x31",
+          "detection_conf": 0.955,
+          "gender": "Male",
+          "gender_conf": 0.622,
+          "age_bucket": "(15-20)",
+          "age_conf": 0.403,
+          "age_group": "youth",
+          "ad_category": "Gaming / Sports",
+          "inference_ms": 19.7
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            46,
+            44,
+            71,
+            75
+          ],
+          "face_size_px": "25x31",
+          "detection_conf": 0.931,
+          "gender": "Male",
+          "gender_conf": 0.999,
+          "age_bucket": "(25-32)",
+          "age_conf": 0.898,
+          "age_group": "adult",
+          "ad_category": "Cars / Finance",
+          "inference_ms": 19.0
+        },
+        {
+          "face_id": 3,
+          "bbox": [
+            92,
+            61,
+            119,
+            91
+          ],
+          "face_size_px": "27x30",
+          "detection_conf": 0.911,
+          "gender": "Male",
+          "gender_conf": 0.956,
+          "age_bucket": "(38-43)",
+          "age_conf": 0.559,
+          "age_group": "adult",
+          "ad_category": "Cars / Finance",
+          "inference_ms": 19.4
+        },
+        {
+          "face_id": 4,
+          "bbox": [
+            196,
+            33,
+            222,
+            69
+          ],
+          "face_size_px": "26x36",
+          "detection_conf": 0.751,
+          "gender": "Male",
+          "gender_conf": 0.973,
+          "age_bucket": "(48-53)",
+          "age_conf": 0.347,
+          "age_group": "middle_aged",
+          "ad_category": "Health / Home Appliances",
+          "inference_ms": 18.8
+        }
+      ],
+      "challenges": [
+        "Face #1: too small (27x31px) \u2014 age/gender may be inaccurate",
+        "Face #2: too small (25x31px) \u2014 age/gender may be inaccurate",
+        "Face #3: too small (27x30px) \u2014 age/gender may be inaccurate",
+        "Face #4: too small (26x36px) \u2014 age/gender may be inaccurate"
+      ]
+    },
+    {
+      "image": "OIP.jpg",
+      "faces_detected": 5,
+      "detection_time_ms": 23.1,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            223,
+            40,
+            254,
+            81
+          ],
+          "face_size_px": "31x41",
+          "detection_conf": 0.973,
+          "gender": "Female",
+          "gender_conf": 0.983,
+          "age_bucket": "(25-32)",
+          "age_conf": 1.0,
+          "age_group": "adult",
+          "ad_category": "Lifestyle / Travel",
+          "inference_ms": 18.4
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            57,
+            35,
+            86,
+            75
+          ],
+          "face_size_px": "29x40",
+          "detection_conf": 0.959,
+          "gender": "Male",
+          "gender_conf": 0.857,
+          "age_bucket": "(25-32)",
+          "age_conf": 0.995,
+          "age_group": "adult",
+          "ad_category": "Cars / Finance",
+          "inference_ms": 17.9
+        },
+        {
+          "face_id": 3,
+          "bbox": [
+            141,
+            61,
+            166,
+            96
+          ],
+          "face_size_px": "25x35",
+          "detection_conf": 0.887,
+          "gender": "Female",
+          "gender_conf": 0.998,
+          "age_bucket": "(25-32)",
+          "age_conf": 0.987,
+          "age_group": "adult",
+          "ad_category": "Lifestyle / Travel",
+          "inference_ms": 19.6
+        },
+        {
+          "face_id": 4,
+          "bbox": [
+            180,
+            13,
+            210,
+            55
+          ],
+          "face_size_px": "30x42",
+          "detection_conf": 0.863,
+          "gender": "Female",
+          "gender_conf": 0.998,
+          "age_bucket": "(15-20)",
+          "age_conf": 0.644,
+          "age_group": "youth",
+          "ad_category": "Fashion / Beauty",
+          "inference_ms": 26.6
+        },
+        {
+          "face_id": 5,
+          "bbox": [
+            107,
+            19,
+            133,
+            53
+          ],
+          "face_size_px": "26x34",
+          "detection_conf": 0.86,
+          "gender": "Male",
+          "gender_conf": 0.801,
+          "age_bucket": "(25-32)",
+          "age_conf": 0.993,
+          "age_group": "adult",
+          "ad_category": "Cars / Finance",
+          "inference_ms": 22.3
+        }
+      ],
+      "challenges": [
+        "Face #1: too small (31x41px) \u2014 age/gender may be inaccurate",
+        "Face #2: too small (29x40px) \u2014 age/gender may be inaccurate",
+        "Face #3: too small (25x35px) \u2014 age/gender may be inaccurate",
+        "Face #4: too small (30x42px) \u2014 age/gender may be inaccurate",
+        "Face #5: too small (26x34px) \u2014 age/gender may be inaccurate"
+      ]
+    },
+    {
+      "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+      "faces_detected": 2,
+      "detection_time_ms": 26.3,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            202,
+            35,
+            229,
+            68
+          ],
+          "face_size_px": "27x33",
+          "detection_conf": 0.985,
+          "gender": "Male",
+          "gender_conf": 0.97,
+          "age_bucket": "(4-6)",
+          "age_conf": 0.696,
+          "age_group": "child",
+          "ad_category": "Toys / Boys Games",
+          "inference_ms": 17.3
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            66,
+            35,
+            90,
+            71
+          ],
+          "face_size_px": "24x36",
+          "detection_conf": 0.984,
+          "gender": "Male",
+          "gender_conf": 0.98,
+          "age_bucket": "(4-6)",
+          "age_conf": 0.544,
+          "age_group": "child",
+          "ad_category": "Toys / Boys Games",
+          "inference_ms": 17.7
+        }
+      ],
+      "challenges": [
+        "Face #1: too small (27x33px) \u2014 age/gender may be inaccurate",
+        "Face #2: too small (24x36px) \u2014 age/gender may be inaccurate"
+      ]
+    },
+    {
+      "image": "test.jpg",
+      "faces_detected": 0,
+      "detection_time_ms": 24.7,
+      "people": [],
+      "challenges": [
+        "No faces detected \u2014 person may be too far, side-on, or low lighting"
+      ]
+    }
+  ]
+}

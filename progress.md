@@ -14,9 +14,17 @@ All of this happens in real time, and the numbers get saved to a database so you
 
 ---
 
-## Project Status: Phase 1 — Working Prototype (Simulation Mode)
+## Project Status: Phase 7 — Integrated Pipeline + API (IN PROGRESS)
 
-The camera pipeline is working. The AI part is currently **simulated with random numbers** (fake data) just to test that everything connects properly. Real AI models have NOT been plugged in yet.
+`pipeline.py` is now the single script that runs everything at once:
+- Live camera capture (OpenCV)
+- InsightFace age + gender detection (ONNX, background thread)
+- SQLite database with upgraded schema (engagement rate, age percentages)
+- FastAPI REST API server (port 8000) with 4 endpoints
+- Windows asyncio fix applied (SelectorEventLoop policy)
+- DB schema migration support (works on old and new databases)
+
+**Next:** Confirm API is reachable at `http://localhost:8000/docs`, then build the React dashboard (Step 8).
 
 ---
 
@@ -1978,4 +1986,248 @@ For a system that saves `viewer_count`, `male`, `female` to a database every 15 
 InsightFace only does faces. It cannot answer open-ended questions like "are people smiling?" or "what are they looking at?". Qwen could do those things.
 
 For this project — counting viewers and estimating age and gender — that trade-off is worth it. If the scope expands later (emotion detection, attention tracking), Qwen could be added back alongside InsightFace for those specific tasks.
+
+---
+
+## Phase 5 — React Dashboard Frontend (COMPLETED April 2026)
+
+---
+
+### What We Built
+
+A live web dashboard that runs in the browser and shows audience analytics in real time. It pulls data from the FastAPI backend (inside `pipeline.py`) and auto-refreshes every 5 seconds — no manual page refresh needed.
+
+You open it by running the React app and going to `http://localhost:5173` in your browser. The dashboard is dark-themed and shows all the key numbers in one place.
+
+---
+
+### Why We Need This
+
+Until now, the only way to see the analytics was:
+1. Look at the OpenCV window (camera with text overlay) — only works on the machine running the camera
+2. Check the SQLite database with a terminal command — not user-friendly
+
+The React dashboard solves both problems:
+- Anyone on the same network can open it in a browser
+- It shows charts, gauges, and color-coded cards — not raw numbers in a database
+
+---
+
+### New Folder: `smart-audience-dashboard/`
+
+This is a completely separate project from the Python backend. It is a React app (a JavaScript framework for building web UIs). You run it separately from `pipeline.py`.
+
+```
+smart-audience-dashboard/
+├── src/
+│   ├── api.js                        ← All HTTP calls to the backend
+│   ├── hooks/
+│   │   └── usePolling.js             ← Auto-refresh timer logic
+│   ├── components/
+│   │   ├── StatusBar.jsx             ← Top bar: connected/offline + time
+│   │   ├── StatCard.jsx              ← Reusable summary number card
+│   │   ├── GenderBar.jsx             ← Blue/pink horizontal split bar
+│   │   ├── AgeChart.jsx              ← Horizontal bar chart: age groups
+│   │   ├── HistoryChart.jsx          ← Line chart: viewers + engagement over time
+│   │   ├── EngagementGauge.jsx       ← Circular gauge: engagement %
+│   │   └── AdRecommendation.jsx      ← Highlighted card: recommended ad type
+│   ├── App.jsx                       ← Main layout, wires all components together
+│   ├── main.jsx                      ← Entry point — mounts React into the HTML page
+│   └── index.css                     ← Global styles (Tailwind base)
+├── tailwind.config.js                ← Tells Tailwind which files to scan
+├── postcss.config.js                 ← Required for Tailwind to process CSS
+├── vite.config.js                    ← Build and dev server config
+└── package.json                      ← Lists all JS libraries used
+```
+
+---
+
+### File-by-file explanation
+
+---
+
+#### `src/api.js` — The API connector
+
+**Purpose:** All calls to the Python backend live here. If the backend URL ever changes, you only update this one file.
+
+**Technical detail:** Uses `axios` — a JavaScript library for making HTTP requests. It is easier to use than the built-in `fetch()` and handles errors more cleanly.
+
+**Four functions:**
+- `fetchHealth()` → calls `/api/v1/health` — is the server alive?
+- `fetchLive()` → calls `/api/v1/analytics/live` — latest one-row snapshot
+- `fetchHistory(limit)` → calls `/api/v1/analytics/history` — last N rows for charts
+- `fetchSummary(limit)` → calls `/api/v1/analytics/summary` — averages for cards
+
+---
+
+#### `src/hooks/usePolling.js` — The auto-refresh engine
+
+**Purpose:** A "hook" (reusable piece of logic) that keeps calling a function on a timer and gives the component back the latest result.
+
+**Simple analogy:** Imagine setting a kitchen timer that goes off every 5 seconds and each time it rings, you go check the camera. This hook does that automatically.
+
+**Technical detail:**
+- Uses `useEffect` (runs once when the component appears on screen)
+- Uses `setInterval` to repeat the fetch every N milliseconds
+- Uses `clearInterval` in cleanup so the timer stops when the component is removed
+- Returns `{ data, error, loading }` — the component can use these to decide what to show
+
+---
+
+#### `src/components/StatusBar.jsx` — Connection indicator
+
+**Purpose:** The thin bar at the top of the dashboard. Shows a green pulsing dot when the backend is running, red dot when it is offline. Also shows the last time data was received.
+
+**Why it matters:** Without this, you would not know if the numbers on screen are live or stale (e.g. if `pipeline.py` crashed).
+
+---
+
+#### `src/components/StatCard.jsx` — Reusable number card
+
+**Purpose:** A single dark card showing one metric (e.g. "Viewers Now: 4"). Used four times in the top row. By making it reusable, we avoid writing the same card HTML four times.
+
+**Props it accepts:**
+- `label` — text above the number
+- `value` — the big number
+- `icon` — emoji on the right
+- `highlight` — color class for the number (green, blue, yellow, purple)
+- `sub` — small grey text below the number (e.g. "last 30 windows")
+
+---
+
+#### `src/components/GenderBar.jsx` — Male vs Female bar
+
+**Purpose:** A horizontal bar that fills proportionally. Left side = blue (male), right side = pink (female). Percentages come from `male_pct` and `female_pct` in the live API data.
+
+**Technical detail:** The bar is built with two `div` elements side by side inside a flex container. Their widths are set with inline styles (e.g. `width: 60%`). CSS `transition` makes the bar animate smoothly when the numbers change.
+
+---
+
+#### `src/components/EngagementGauge.jsx` — Circular engagement meter
+
+**Purpose:** A round dial showing what % of detected faces are "looking at" the display. Green = high, yellow = medium, red = low.
+
+**Technical detail:** Built with raw SVG (Scalable Vector Graphics — drawing in code). Uses the `stroke-dasharray` / `stroke-dashoffset` trick:
+- Draw a full circle with a dashed border
+- The dash length = engagement% × circumference
+- The gap length fills the rest
+- Result: a circle that is partially filled like a gauge dial
+
+This avoids needing a third-party chart library just for one circle.
+
+---
+
+#### `src/components/AgeChart.jsx` — Age group breakdown
+
+**Purpose:** Horizontal bar chart showing what fraction of the audience is in each age group: Child, Youth, Adult, Middle Aged, Senior.
+
+**Technical detail:** Uses Recharts `BarChart` with `layout="vertical"`. Each bar gets its own color. The data comes from the five `age_*_pct` fields in the live API response (converted from 0–1 to 0–100% for display).
+
+---
+
+#### `src/components/HistoryChart.jsx` — Time series line chart
+
+**Purpose:** Shows how viewer count and engagement rate have changed over the last 40 data points (about 6–7 minutes). Two lines on one chart:
+- Green line = viewer count (left Y axis, raw number)
+- Yellow line = engagement % (right Y axis, 0–100%)
+
+**Technical detail:** Uses Recharts `LineChart` with two `YAxis` components — one on each side of the chart — because the two metrics have different scales (count vs percentage). `dot={false}` removes the circle markers so the line is clean.
+
+---
+
+#### `src/components/AdRecommendation.jsx` — Recommended ad card
+
+**Purpose:** The most important output of the whole system. Based on who the AI detected (age + gender), it shows what ad category should be displayed right now. The card background gradient changes colour based on the category (e.g. blue for Gaming, pink for Fashion).
+
+**Where the recommendation comes from:** The `dominant_ad` field in the live API response. This was already computed in `pipeline.py` using the `get_ad_category(age_group, gender)` function.
+
+---
+
+#### `src/App.jsx` — The main layout file
+
+**Purpose:** Ties all components together. Fetches data from all four API endpoints using the `usePolling` hook, then passes the data as "props" (like arguments) into each component.
+
+**Polling schedule:**
+- `/live` and `/history` → every 5 seconds (fast — these are the live numbers)
+- `/summary` and `/health` → every 10 seconds (slower — these change less)
+
+**Layout is a CSS Grid:**
+- Row 1: 4 stat cards side by side
+- Row 2: gender bar (takes 2/3 width) + engagement gauge (1/3 width)
+- Row 3: full-width history line chart
+- Row 4: age bar chart (half) + ad recommendation card (half)
+
+---
+
+### Libraries used in the dashboard
+
+| Library | What it does | Why we chose it |
+|---------|-------------|-----------------|
+| React | Builds the UI as reusable components | Industry standard for dashboards |
+| Vite | Dev server + build tool | Much faster than webpack/CRA |
+| Tailwind CSS | Utility-class styling | Write styles inline, no separate CSS files |
+| Recharts | Line charts, bar charts | Built for React, uses SVG, easy to customise |
+| Axios | HTTP requests to the backend | Cleaner than fetch(), handles errors well |
+
+---
+
+### How to run the dashboard
+
+**Step 1:** Start the backend (in one terminal):
+```
+cd C:\Users\Ariba Shakil\OneDrive\Pictures\Desktop\SmartAudienceAnalysis
+python pipeline.py
+```
+This starts the camera + InsightFace + FastAPI server on port 8000.
+
+**Step 2:** Start the dashboard (in a second terminal):
+```
+cd smart-audience-dashboard
+npm run dev
+```
+Then open `http://localhost:5173` in your browser.
+
+---
+
+### Updated Complete Status Table (April 2026)
+
+| What | Status |
+|------|--------|
+| Live camera capture | DONE |
+| InsightFace age + gender detection | DONE |
+| Background inference thread | DONE |
+| Smoothing buffer for stable data | DONE |
+| Age group classification | DONE |
+| Gender classification | DONE |
+| Ad category recommendation logic | DONE |
+| Engagement proxy (det_score) | DONE |
+| SQLite database with thread-safe writes | DONE |
+| FastAPI backend — /live endpoint | DONE |
+| FastAPI backend — /history endpoint | DONE |
+| FastAPI backend — /summary endpoint | DONE |
+| FastAPI backend — /health endpoint | DONE |
+| React dashboard — StatusBar | DONE |
+| React dashboard — StatCards (4 metrics) | DONE |
+| React dashboard — Gender split bar | DONE |
+| React dashboard — Engagement gauge | DONE |
+| React dashboard — History line chart | DONE |
+| React dashboard — Age breakdown chart | DONE |
+| React dashboard — Ad recommendation card | DONE |
+| Real gaze detection (L2CS-Net) | NOT STARTED |
+| RTSP / IP camera support | NOT STARTED |
+| Switch SQLite → PostgreSQL | NOT STARTED |
+| Multi-camera support | NOT STARTED |
+
+---
+
+### What Is Next
+
+**Option A — Test the full system end-to-end:**
+Run `pipeline.py` and `npm run dev` at the same time. Open the dashboard in a browser. Confirm all cards, charts, and the status indicator update live.
+
+**Option B — Add real gaze detection:**
+Replace the `det_score` engagement proxy with L2CS-Net (a dedicated gaze estimation model). This would give a real "is this person looking at the screen?" signal instead of using face detection confidence as a proxy.
+
+**Option C — Add RTSP camera support:**
+Change `cv2.VideoCapture(0)` to accept an RTSP URL so the system can work with IP cameras (not just a laptop webcam). This is a one-line change in `pipeline.py` but requires testing with a real IP camera.
 - Fast enough for the 15-second inference interval used in main.py

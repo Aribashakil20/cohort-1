@@ -1,0 +1,72 @@
+{
+  "model": "DeepFace",
+  "detector_backend": "opencv",
+  "total_images": 7,
+  "total_faces": 0,
+  "avg_detection_ms": 2868.9,
+  "results": [
+    {
+      "image": "image copy 2.png",
+      "faces_detected": 0,
+      "detection_time_ms": 15781.9,
+      "people": [],
+      "challenges": [
+        "DeepFace error: Unable to synchronously open file (file signature not found)"
+      ]
+    },
+    {
+      "image": "image copy.png",
+      "faces_detected": 0,
+      "detection_time_ms": 1548.0,
+      "people": [],
+      "challenges": [
+        "DeepFace error: Unable to synchronously open file (file signature not found)"
+      ]
+    },
+    {
+      "image": "image.png",
+      "faces_detected": 0,
+      "detection_time_ms": 1093.6,
+      "people": [],
+      "challenges": [
+        "DeepFace error: Unable to synchronously open file (file signature not found)"
+      ]
+    },
+    {
+      "image": "OIP (1).jpg",
+      "faces_detected": 0,
+      "detection_time_ms": 469.0,
+      "people": [],
+      "challenges": [
+        "DeepFace error: Unable to synchronously open file (file signature not found)"
+      ]
+    },
+    {
+      "image": "OIP.jpg",
+      "faces_detected": 0,
+      "detection_time_ms": 461.1,
+      "people": [],
+      "challenges": [
+        "DeepFace error: Unable to synchronously open file (file signature not found)"
+      ]
+    },
+    {
+      "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+      "faces_detected": 0,
+      "detection_time_ms": 385.1,
+      "people": [],
+      "challenges": [
+        "DeepFace error: Unable to synchronously open file (file signature not found)"
+      ]
+    },
+    {
+      "image": "test.jpg",
+      "faces_detected": 0,
+      "detection_time_ms": 343.9,
+      "people": [],
+      "challenges": [
+        "DeepFace error: Unable to synchronously open file (file signature not found)"
+      ]
+    }
+  ]
+}

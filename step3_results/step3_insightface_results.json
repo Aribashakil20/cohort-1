@@ -1,0 +1,472 @@
+{
+  "model": "InsightFace",
+  "model_pack": "buffalo_l",
+  "total_images": 7,
+  "total_faces": 26,
+  "avg_detection_ms": 4651.9,
+  "results": [
+    {
+      "image": "image copy 2.png",
+      "faces_detected": 7,
+      "detection_time_ms": 8782.3,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            1644,
+            1968,
+            1823,
+            2203
+          ],
+          "face_size_px": "179x235",
+          "age": 45,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.92,
+          "ad_category": "Cars / Finance"
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            426,
+            2130,
+            630,
+            2365
+          ],
+          "face_size_px": "204x235",
+          "age": 63,
+          "age_group": "senior",
+          "gender": "Female",
+          "det_score": 0.906,
+          "ad_category": "Healthcare / Insurance"
+        },
+        {
+          "face_id": 3,
+          "bbox": [
+            2011,
+            2134,
+            2185,
+            2354
+          ],
+          "face_size_px": "174x220",
+          "age": 46,
+          "age_group": "middle_aged",
+          "gender": "Female",
+          "det_score": 0.902,
+          "ad_category": "Skincare / Wellness"
+        },
+        {
+          "face_id": 4,
+          "bbox": [
+            2467,
+            2221,
+            2683,
+            2457
+          ],
+          "face_size_px": "216x236",
+          "age": 26,
+          "age_group": "adult",
+          "gender": "Female",
+          "det_score": 0.901,
+          "ad_category": "Lifestyle / Travel"
+        },
+        {
+          "face_id": 5,
+          "bbox": [
+            838,
+            2007,
+            1019,
+            2232
+          ],
+          "face_size_px": "181x225",
+          "age": 33,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.885,
+          "ad_category": "Cars / Finance"
+        },
+        {
+          "face_id": 6,
+          "bbox": [
+            2895,
+            2276,
+            2962,
+            2354
+          ],
+          "face_size_px": "67x78",
+          "age": 39,
+          "age_group": "adult",
+          "gender": "Female",
+          "det_score": 0.763,
+          "ad_category": "Lifestyle / Travel"
+        },
+        {
+          "face_id": 7,
+          "bbox": [
+            2772,
+            2227,
+            2830,
+            2296
+          ],
+          "face_size_px": "58x69",
+          "age": 34,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.717,
+          "ad_category": "Cars / Finance"
+        }
+      ],
+      "challenges": []
+    },
+    {
+      "image": "image copy.png",
+      "faces_detected": 4,
+      "detection_time_ms": 4410.0,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            79,
+            511,
+            210,
+            670
+          ],
+          "face_size_px": "131x159",
+          "age": 28,
+          "age_group": "adult",
+          "gender": "Female",
+          "det_score": 0.916,
+          "ad_category": "Lifestyle / Travel"
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            360,
+            472,
+            469,
+            612
+          ],
+          "face_size_px": "109x140",
+          "age": 23,
+          "age_group": "youth",
+          "gender": "Female",
+          "det_score": 0.894,
+          "ad_category": "Fashion / Beauty"
+        },
+        {
+          "face_id": 3,
+          "bbox": [
+            751,
+            462,
+            879,
+            629
+          ],
+          "face_size_px": "128x167",
+          "age": 33,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.889,
+          "ad_category": "Cars / Finance"
+        },
+        {
+          "face_id": 4,
+          "bbox": [
+            557,
+            583,
+            664,
+            720
+          ],
+          "face_size_px": "107x137",
+          "age": 21,
+          "age_group": "youth",
+          "gender": "Female",
+          "det_score": 0.865,
+          "ad_category": "Fashion / Beauty"
+        }
+      ],
+      "challenges": []
+    },
+    {
+      "image": "image.png",
+      "faces_detected": 2,
+      "detection_time_ms": 3230.3,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            170,
+            414,
+            329,
+            613
+          ],
+          "face_size_px": "159x199",
+          "age": 42,
+          "age_group": "adult",
+          "gender": "Female",
+          "det_score": 0.909,
+          "ad_category": "Lifestyle / Travel"
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            491,
+            401,
+            644,
+            601
+          ],
+          "face_size_px": "153x200",
+          "age": 36,
+          "age_group": "adult",
+          "gender": "Female",
+          "det_score": 0.892,
+          "ad_category": "Lifestyle / Travel"
+        }
+      ],
+      "challenges": []
+    },
+    {
+      "image": "OIP (1).jpg",
+      "faces_detected": 4,
+      "detection_time_ms": 3303.5,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            48,
+            44,
+            70,
+            75
+          ],
+          "face_size_px": "22x31",
+          "age": 26,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.893,
+          "ad_category": "Cars / Finance"
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            142,
+            55,
+            167,
+            86
+          ],
+          "face_size_px": "25x31",
+          "age": 35,
+          "age_group": "adult",
+          "gender": "Female",
+          "det_score": 0.879,
+          "ad_category": "Lifestyle / Travel"
+        },
+        {
+          "face_id": 3,
+          "bbox": [
+            94,
+            61,
+            117,
+            91
+          ],
+          "face_size_px": "23x30",
+          "age": 23,
+          "age_group": "youth",
+          "gender": "Male",
+          "det_score": 0.879,
+          "ad_category": "Gaming / Sports"
+        },
+        {
+          "face_id": 4,
+          "bbox": [
+            196,
+            34,
+            222,
+            69
+          ],
+          "face_size_px": "26x35",
+          "age": 35,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.875,
+          "ad_category": "Cars / Finance"
+        }
+      ],
+      "challenges": [
+        "Face #1: small face (22x31px) \u2014 attributes may be inaccurate",
+        "Face #2: small face (25x31px) \u2014 attributes may be inaccurate",
+        "Face #3: small face (23x30px) \u2014 attributes may be inaccurate",
+        "Face #4: small face (26x35px) \u2014 attributes may be inaccurate"
+      ]
+    },
+    {
+      "image": "OIP.jpg",
+      "faces_detected": 5,
+      "detection_time_ms": 7054.5,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            140,
+            61,
+            167,
+            98
+          ],
+          "face_size_px": "27x37",
+          "age": 31,
+          "age_group": "adult",
+          "gender": "Female",
+          "det_score": 0.921,
+          "ad_category": "Lifestyle / Travel"
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            224,
+            40,
+            254,
+            80
+          ],
+          "face_size_px": "30x40",
+          "age": 29,
+          "age_group": "adult",
+          "gender": "Female",
+          "det_score": 0.912,
+          "ad_category": "Lifestyle / Travel"
+        },
+        {
+          "face_id": 3,
+          "bbox": [
+            182,
+            15,
+            210,
+            54
+          ],
+          "face_size_px": "28x39",
+          "age": 39,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.903,
+          "ad_category": "Cars / Finance"
+        },
+        {
+          "face_id": 4,
+          "bbox": [
+            57,
+            36,
+            87,
+            76
+          ],
+          "face_size_px": "30x40",
+          "age": 37,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.903,
+          "ad_category": "Cars / Finance"
+        },
+        {
+          "face_id": 5,
+          "bbox": [
+            106,
+            18,
+            134,
+            55
+          ],
+          "face_size_px": "28x37",
+          "age": 44,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.903,
+          "ad_category": "Cars / Finance"
+        }
+      ],
+      "challenges": [
+        "Face #1: small face (27x37px) \u2014 attributes may be inaccurate",
+        "Face #2: small face (30x40px) \u2014 attributes may be inaccurate",
+        "Face #3: small face (28x39px) \u2014 attributes may be inaccurate",
+        "Face #4: small face (30x40px) \u2014 attributes may be inaccurate",
+        "Face #5: small face (28x37px) \u2014 attributes may be inaccurate"
+      ]
+    },
+    {
+      "image": "png-transparent-group-of-people-sitting-on-bench-while-taking-groupie-table-instructional-design-dining-room-group-of-people-kitchen-furniture-photography-thumbnail.png",
+      "faces_detected": 4,
+      "detection_time_ms": 5413.9,
+      "people": [
+        {
+          "face_id": 1,
+          "bbox": [
+            68,
+            37,
+            93,
+            70
+          ],
+          "face_size_px": "25x33",
+          "age": 43,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.86,
+          "ad_category": "Cars / Finance"
+        },
+        {
+          "face_id": 2,
+          "bbox": [
+            204,
+            36,
+            231,
+            67
+          ],
+          "face_size_px": "27x31",
+          "age": 40,
+          "age_group": "adult",
+          "gender": "Male",
+          "det_score": 0.85,
+          "ad_category": "Cars / Finance"
+        },
+        {
+          "face_id": 3,
+          "bbox": [
+            164,
+            63,
+            183,
+            90
+          ],
+          "face_size_px": "19x27",
+          "age": 44,
+          "age_group": "adult",
+          "gender": "Female",
+          "det_score": 0.8,
+          "ad_category": "Lifestyle / Travel"
+        },
+        {
+          "face_id": 4,
+          "bbox": [
+            87,
+            60,
+            109,
+            86
+          ],
+          "face_size_px": "22x26",
+          "age": 34,
+          "age_group": "adult",
+          "gender": "Female",
+          "det_score": 0.799,
+          "ad_category": "Lifestyle / Travel"
+        }
+      ],
+      "challenges": [
+        "Face #1: small face (25x33px) \u2014 attributes may be inaccurate",
+        "Face #2: small face (27x31px) \u2014 attributes may be inaccurate",
+        "Face #3: small face (19x27px) \u2014 attributes may be inaccurate",
+        "Face #4: small face (22x26px) \u2014 attributes may be inaccurate"
+      ]
+    },
+    {
+      "image": "test.jpg",
+      "faces_detected": 0,
+      "detection_time_ms": 368.7,
+      "people": [],
+      "challenges": [
+        "No faces detected \u2014 may be too far, side-on, or low lighting"
+      ]
+    }
+  ]
+}
