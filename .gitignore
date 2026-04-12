@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv
+venv/
+
+# Database (local only — never commit real audience data)
+*.db
+*.sqlite
+
+# Local data exports & test outputs
+analytics.json
+analytics_dataset.*
+cleaned_analytics.json
+advanced_test_results.json
+test_robustness_results.json
+live_screenshots/
+test_images/
+test_outputs/
+test.jpg
+
+# Node
+node_modules/
+dist/
+.npm
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
