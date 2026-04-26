@@ -185,6 +185,20 @@ def open_db() -> sqlite3.Connection:
         except sqlite3.OperationalError:
             pass  # column already exists — skip
 
+    # Dwell sessions table.
+    # One row = one continuous audience session (people present → people leave).
+    # Population-level only: stores duration and counts, never who was there.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS dwell_sessions (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_time       TEXT NOT NULL,
+            end_time         TEXT NOT NULL,
+            duration_seconds REAL NOT NULL,
+            peak_count       INTEGER NOT NULL,
+            avg_count        REAL NOT NULL
+        )
+    """)
+
     conn.commit()
     print("[DB] Database ready:", DB_PATH)
     return conn
@@ -267,6 +281,16 @@ result_buffer = deque(maxlen=SMOOTH_WINDOW)
 
 last_save_time  = 0.0     # epoch seconds — when we last wrote a DB row
 last_saved_data = {}      # prevents writing duplicate rows back-to-back
+
+# ── Dwell time tracking (population-level, no individual tracking) ────────────
+# We track "sessions" — contiguous periods where at least one person is present.
+# When viewer_count goes  0 → >0: session starts.
+# While viewer_count stays >0: session continues, we record peak and average.
+# When viewer_count goes >0 → 0: session ends, duration saved to dwell_sessions.
+dwell_active  = False   # True while at least one person is currently in frame
+dwell_start   = 0.0     # epoch time when this session began
+dwell_peak    = 0       # highest viewer_count seen in this session
+dwell_samples: list = []  # viewer_count reading per 10-s window (for avg)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -480,6 +504,81 @@ def maybe_save_to_db(conn: sqlite3.Connection):
           f"engagement={smoothed['engagement_rate']:.0%} "
           f"dominant_ad={smoothed['dominant_ad']!r}")
 
+    # Update dwell session tracking based on the viewer count we just saved
+    _update_dwell(conn, smoothed["viewer_count"])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 7.5 — DWELL TIME TRACKING
+#
+# What is a "session"?
+#   A session is a continuous window where at least one person is present.
+#   It starts when the first person enters frame and ends when the last
+#   person leaves frame (viewer_count drops to 0).
+#
+# Why 5-second minimum?
+#   Very brief appearances (someone walking quickly past the camera) are not
+#   meaningful dwell events. We ignore sessions shorter than 5 seconds.
+#
+# Privacy note:
+#   We store only duration and counts (peak, average). No individual is
+#   tracked. We don't know if it's the same person returning or a new person.
+# ══════════════════════════════════════════════════════════════════════════════
+
+MIN_DWELL_SECONDS = 5.0  # ignore sessions shorter than this (walk-bys)
+
+def _update_dwell(conn: sqlite3.Connection, viewer_count: int):
+    """
+    Called after every DB save with the current smoothed viewer_count.
+    Manages the session state machine and writes to dwell_sessions on session end.
+    """
+    global dwell_active, dwell_start, dwell_peak, dwell_samples
+
+    now = time.time()
+
+    if viewer_count > 0:
+        if not dwell_active:
+            # New session — someone just entered the frame
+            dwell_active  = True
+            dwell_start   = now
+            dwell_peak    = viewer_count
+            dwell_samples = [viewer_count]
+            print(f"[Dwell] Session started — {viewer_count} viewer(s) in frame")
+        else:
+            # Session continues — update running stats
+            dwell_peak = max(dwell_peak, viewer_count)
+            dwell_samples.append(viewer_count)
+    else:
+        if dwell_active:
+            # Session ended — everyone left the frame
+            duration = now - dwell_start
+
+            if duration >= MIN_DWELL_SECONDS:
+                avg_count  = sum(dwell_samples) / len(dwell_samples)
+                start_ts   = datetime.fromtimestamp(dwell_start, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                end_ts     = datetime.fromtimestamp(now,         tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+                with db_lock:
+                    conn.execute(
+                        """
+                        INSERT INTO dwell_sessions
+                            (start_time, end_time, duration_seconds, peak_count, avg_count)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (start_ts, end_ts, round(duration, 1), dwell_peak, round(avg_count, 1))
+                    )
+                    conn.commit()
+
+                print(f"[Dwell] Session saved — duration={duration:.0f}s  "
+                      f"peak={dwell_peak}  avg={avg_count:.1f}")
+            else:
+                print(f"[Dwell] Session too short ({duration:.0f}s) — skipped")
+
+            # Reset for next session
+            dwell_active  = False
+            dwell_peak    = 0
+            dwell_samples = []
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 8 — FASTAPI APP
@@ -526,6 +625,14 @@ class SummaryResponse(BaseModel):
     avg_female_pct:         float
     dominant_age_group:     str
     dominant_ad:            str
+
+class DwellSession(BaseModel):
+    id:               int
+    start_time:       str
+    end_time:         str
+    duration_seconds: float
+    peak_count:       int
+    avg_count:        float
 
 class HealthResponse(BaseModel):
     status:   str
@@ -622,6 +729,22 @@ def create_api(conn: sqlite3.Connection) -> FastAPI:
             "dominant_age_group":  dom_age,
             "dominant_ad":         dom_ad,
         }
+
+    # ── GET /api/v1/analytics/dwell ──────────────────────────────────────────
+    # Returns the last `limit` dwell sessions (completed audience sessions).
+    # Each row = one continuous period where at least one person was present.
+    @api.get("/api/v1/analytics/dwell", response_model=List[DwellSession])
+    def analytics_dwell(limit: int = Query(default=20, ge=1, le=200)):
+        with db_lock:
+            rows = conn.execute(
+                """
+                SELECT * FROM (
+                    SELECT * FROM dwell_sessions ORDER BY id DESC LIMIT ?
+                ) ORDER BY id ASC
+                """,
+                (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     return api
 

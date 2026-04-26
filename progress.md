@@ -14,7 +14,7 @@ All of this happens in real time, and the numbers get saved to a database so you
 
 ---
 
-## Project Status: Phase 8 — Real Gaze Detection via Head Pose Estimation (COMPLETE)
+## Project Status: Phase 9 — Dwell Time Tracking (COMPLETE)
 
 `pipeline.py` now runs everything at once with real gaze detection:
 - Live camera capture (OpenCV)
@@ -30,7 +30,7 @@ All of this happens in real time, and the numbers get saved to a database so you
 **Completed phases:** 1 (Caffe baseline) → 2 (DeepFace test) → 3 (InsightFace selected) →
 4 (model comparison) → 5 (age/gender pipeline) → 6 (ad mapping) → 7 (integrated pipeline + API + dashboard) → 8 (real gaze detection)
 
-**Next:** Dwell time tracking — estimate how long visitors stay in frame.
+**Next:** RTSP / IP camera support — replace webcam with a network camera stream.
 
 ---
 
@@ -147,6 +147,141 @@ Male   34 | adult  Y:+67 P:+3 [AWAY]
 - `Y:+12` = yaw +12° (slightly right, within 30° threshold → counts as looking)
 - `P:-5`  = pitch -5° (slightly down, within 25° threshold → counts as looking)
 - `Y:+67` = yaw +67° (turned 67° right → outside threshold → [AWAY])
+
+---
+
+## Step 9 — Dwell Time Tracking (Population-Level)
+
+### Why dwell time matters
+
+Dwell time = how long an audience group stays in front of the display.
+It is one of the most important metrics in digital signage and retail analytics:
+- Short dwell (< 5s) = person walked past, didn't stop
+- Medium dwell (10–30s) = person noticed the display, glanced at it
+- Long dwell (> 30s) = person is engaged, reading or watching
+
+Advertisers pay more for placements with high average dwell time because the
+audience is actually paying attention, not just walking through.
+
+---
+
+### Why we can't do individual tracking
+
+Tracking individuals would mean: "Person A entered at 10:00, left at 10:15."
+That requires assigning an identity (face embedding) to each person and
+following them across frames. That violates the privacy requirements of this
+system — we must not track or re-identify anyone.
+
+---
+
+### The population-level session approach
+
+Instead we track the **presence state** of the audience:
+
+```
+State: EMPTY (viewer_count == 0)
+  ↓  someone enters frame
+State: OCCUPIED (viewer_count > 0)   ← session active, timer running
+  ↓  everyone leaves frame
+State: EMPTY again                   ← session ends, duration saved
+```
+
+We don't know:
+- Whether it was the same person who came back
+- How long any specific individual stayed
+
+We do know:
+- How long at least one person was continuously present
+- How many people (peak and average) were there during that window
+
+This is meaningful population-level data — same approach used in retail
+foot traffic analytics systems.
+
+---
+
+### Minimum session duration
+
+Sessions shorter than 5 seconds are discarded. These are:
+- A person walking quickly past (not stopping)
+- A brief lighting change that triggered a false detection
+- Camera noise
+
+Only genuine "stopped in front of the display" events are recorded.
+
+---
+
+### The session state machine
+
+```
+_update_dwell(conn, viewer_count) is called after every 10-second DB save.
+
+viewer_count > 0 AND session NOT active:
+    → start new session (record start_time, reset peak/samples)
+
+viewer_count > 0 AND session active:
+    → update peak_count if new high
+    → append to samples list (for average calculation)
+
+viewer_count == 0 AND session WAS active:
+    → calculate duration = now - start_time
+    → if duration >= 5s: save to dwell_sessions table
+    → reset state (active=False, peak=0, samples=[])
+```
+
+---
+
+### What changed in the code
+
+**`open_db()`** — added `dwell_sessions` table:
+```sql
+CREATE TABLE IF NOT EXISTS dwell_sessions (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    start_time       TEXT NOT NULL,
+    end_time         TEXT NOT NULL,
+    duration_seconds REAL NOT NULL,
+    peak_count       INTEGER NOT NULL,
+    avg_count        REAL NOT NULL
+)
+```
+
+**Section 5 (shared state)** — added 4 new global variables:
+- `dwell_active` — whether a session is currently running
+- `dwell_start` — epoch time when current session started
+- `dwell_peak` — max viewer_count seen in this session
+- `dwell_samples` — list of viewer_count readings per 10s window
+
+**Section 7.5 (new)** — `_update_dwell(conn, viewer_count)`:
+- State machine logic (described above)
+- Called from `maybe_save_to_db()` after every successful DB write
+
+**Section 8 (API)** — new endpoint and model:
+- `DwellSession` Pydantic model (6 fields)
+- `GET /api/v1/analytics/dwell?limit=20` — returns recent sessions
+
+---
+
+### Example API response from /api/v1/analytics/dwell
+
+```json
+[
+  {
+    "id": 1,
+    "start_time": "2026-04-26T10:15:00Z",
+    "end_time": "2026-04-26T10:15:47Z",
+    "duration_seconds": 47.3,
+    "peak_count": 3,
+    "avg_count": 2.1
+  },
+  {
+    "id": 2,
+    "start_time": "2026-04-26T10:22:10Z",
+    "end_time": "2026-04-26T10:22:18Z",
+    "duration_seconds": 8.2,
+    "peak_count": 1,
+    "avg_count": 1.0
+  }
+]
+```
 
 ---
 
