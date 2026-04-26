@@ -37,3 +37,9 @@ export async function fetchSummary(limit = 30) {
   const res = await axios.get(`${BASE}/analytics/summary?limit=${limit}`);
   return res.data;
 }
+
+/** Recent dwell sessions — each row = one continuous audience visit */
+export async function fetchDwell(limit = 20) {
+  const res = await axios.get(`${BASE}/analytics/dwell?limit=${limit}`);
+  return res.data;
+}
