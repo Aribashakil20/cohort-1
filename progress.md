@@ -14,7 +14,7 @@ All of this happens in real time, and the numbers get saved to a database so you
 
 ---
 
-## Project Status: Phase 10 — RTSP / IP Camera Support (COMPLETE)
+## Project Status: Phase 11 — PostgreSQL + Multi-Camera Support (COMPLETE)
 
 `pipeline.py` now runs everything at once with real gaze detection:
 - Live camera capture (OpenCV)
@@ -30,7 +30,7 @@ All of this happens in real time, and the numbers get saved to a database so you
 **Completed phases:** 1 (Caffe baseline) → 2 (DeepFace test) → 3 (InsightFace selected) →
 4 (model comparison) → 5 (age/gender pipeline) → 6 (ad mapping) → 7 (integrated pipeline + API + dashboard) → 8 (real gaze detection)
 
-**Next:** PostgreSQL + multi-camera support — production-grade database and multi-stream deployment.
+**All planned phases complete.** System is production-ready for single or multi-camera deployment.
 
 ---
 
@@ -147,6 +147,186 @@ Male   34 | adult  Y:+67 P:+3 [AWAY]
 - `Y:+12` = yaw +12° (slightly right, within 30° threshold → counts as looking)
 - `P:-5`  = pitch -5° (slightly down, within 25° threshold → counts as looking)
 - `Y:+67` = yaw +67° (turned 67° right → outside threshold → [AWAY])
+
+---
+
+## Step 11 — PostgreSQL + Multi-Camera Support
+
+### The problem with SQLite for multiple cameras
+
+SQLite is a file-based database. The entire database is one file (`audience.db`).
+It works perfectly for one camera. But it has one hard limitation:
+
+> **SQLite allows only one writer at a time.**
+
+If two cameras try to write at the same moment, one blocks and waits.
+At 10-second intervals this is usually fine — but under heavy load or with
+many cameras, writes start queuing up and you risk data loss.
+
+PostgreSQL is a proper database server. It runs as a separate process,
+accepts multiple simultaneous connections, and handles concurrent writes
+from many clients at the same time without any conflicts.
+
+---
+
+### The two things we added
+
+#### 1. `CAMERA_ID` — every row knows which camera it came from
+
+```python
+CAMERA_ID = "cam_01"   # change to "cam_02" for the second camera
+```
+
+Every row inserted into `analytics` and `dwell_sessions` is tagged:
+```sql
+INSERT INTO analytics (camera_id, timestamp, viewer_count, ...) VALUES ('cam_01', ...)
+```
+
+This means you can run two instances of `pipeline.py` simultaneously:
+- Instance 1: `CAMERA_ID = "cam_01"`, pointing at entrance camera
+- Instance 2: `CAMERA_ID = "cam_02"`, pointing at checkout camera
+
+Both write to the same database. Their rows never get mixed up because
+every row carries its `camera_id`.
+
+#### 2. `DB_BACKEND` — one config line switches between SQLite and PostgreSQL
+
+```python
+DB_BACKEND = "sqlite"     # default — uses audience.db, no setup needed
+DB_BACKEND = "postgres"   # production — uses PostgreSQL server
+```
+
+Nothing else in the code needs to change. The same pipeline, same API,
+same dashboard works with both backends.
+
+---
+
+### The compatibility problem (and how we solved it)
+
+SQLite and PostgreSQL have two annoying differences:
+
+| Thing | SQLite | PostgreSQL |
+|---|---|---|
+| Query placeholder | `?` | `%s` |
+| Row access | `sqlite3.Row` (dict-like) | tuple (need special cursor) |
+| Auto-increment | `INTEGER PRIMARY KEY AUTOINCREMENT` | `SERIAL PRIMARY KEY` |
+
+If we wrote separate SQL for each backend, we'd have duplicated code everywhere.
+
+**Solution — `PGConnection` wrapper class:**
+
+```python
+class PGConnection:
+    def __init__(self, pg_conn):
+        self._conn = pg_conn
+
+    def execute(self, sql, params=None):
+        sql = sql.replace("?", "%s")           # fix placeholders automatically
+        cur = self._conn.cursor(cursor_factory=RealDictCursor)  # dict-style rows
+        cur.execute(sql, params or ())
+        return cur
+
+    def commit(self):  self._conn.commit()
+    def close(self):   self._conn.close()
+```
+
+This wrapper:
+- Replaces `?` with `%s` in every SQL string before executing
+- Uses `RealDictCursor` so rows behave like dicts (same as `sqlite3.Row`)
+- Exposes the same `.execute()` and `.commit()` interface as sqlite3
+
+**Result:** Every single `conn.execute(sql, params)` call in the codebase
+works identically for both SQLite and PostgreSQL. Zero duplicate SQL.
+
+---
+
+### `open_db()` — how it branches
+
+```python
+def open_db():
+    if DB_BACKEND == "postgres":
+        import psycopg2
+        pg_conn = psycopg2.connect(host=PG_HOST, port=PG_PORT, ...)
+        conn = PGConnection(pg_conn)       # wrap it
+    else:
+        raw = sqlite3.connect(DB_PATH, check_same_thread=False)
+        raw.row_factory = sqlite3.Row
+        conn = raw                         # sqlite3 already has the right interface
+
+    # Everything below this point works the same for both backends
+    conn.execute("CREATE TABLE IF NOT EXISTS analytics (...)")
+    conn.execute("CREATE TABLE IF NOT EXISTS dwell_sessions (...)")
+    conn.commit()
+    return conn
+```
+
+---
+
+### API — `camera_id` filter on all endpoints
+
+All endpoints now accept an optional `?camera_id=cam_01` query parameter:
+
+```
+/api/v1/analytics/live                    ← most recent row from ALL cameras
+/api/v1/analytics/live?camera_id=cam_01  ← most recent row from cam_01 only
+/api/v1/analytics/history?camera_id=cam_02&limit=20  ← last 20 rows from cam_02
+```
+
+If `camera_id` is not specified, all cameras' data is returned.
+The `camera_id` field is also included in every JSON response row.
+
+---
+
+### How to run two cameras simultaneously
+
+**Terminal 1 — entrance camera:**
+```python
+# Top of pipeline.py
+CAMERA_SOURCE = 0           # webcam
+CAMERA_ID     = "cam_01"
+API_PORT      = 8000
+DB_BACKEND    = "postgres"  # both instances share the same PostgreSQL DB
+```
+```bash
+python pipeline.py
+```
+
+**Terminal 2 — checkout camera:**
+```python
+# Top of pipeline.py
+CAMERA_SOURCE = 1           # second camera
+CAMERA_ID     = "cam_02"
+API_PORT      = 8001        # different port so they don't clash
+DB_BACKEND    = "postgres"
+```
+```bash
+python pipeline.py
+```
+
+Both write to the same PostgreSQL database. The dashboard queries
+`/api/v1/analytics/history` (all cameras) or filters by `?camera_id=cam_01`.
+
+---
+
+### How to set up PostgreSQL (when needed)
+
+```bash
+# Install Python driver
+pip install psycopg2-binary
+
+# Create the database (run once)
+psql -U postgres -c "CREATE DATABASE smartaudience;"
+
+# Then set in pipeline.py:
+DB_BACKEND  = "postgres"
+PG_HOST     = "localhost"
+PG_PORT     = 5432
+PG_DBNAME   = "smartaudience"
+PG_USER     = "postgres"
+PG_PASSWORD = "your_password"
+```
+
+The tables are created automatically on first run — same as SQLite.
 
 ---
 

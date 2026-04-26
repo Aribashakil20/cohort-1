@@ -100,6 +100,12 @@ CAMERA_SOURCE      = 0          # Webcam:   0 = built-in, 1 = first external
                                 # IP cam:   "rtsp://192.168.1.100:554/stream"
                                 # With auth:"rtsp://admin:pass@192.168.1.100:554/stream"
 RTSP_RECONNECT_DELAY = 5        # seconds to wait before retrying after a network drop
+CAMERA_ID          = "cam_01"   # Unique name for this camera instance.
+                                # Change to "cam_02", "cam_03" etc. when running
+                                # multiple pipeline instances simultaneously.
+                                # Every DB row is tagged with this ID so data
+                                # from different cameras never gets mixed up.
+
 MODEL_PACK         = "buffalo_l"  # InsightFace model; buffalo_s is faster but less accurate
 INFERENCE_EVERY    = 15         # Run InsightFace on every Nth frame
                                 # At 30fps this is every 0.5s. Lower = more frequent but laggier.
@@ -108,7 +114,20 @@ SMOOTH_WINDOW      = 3          # Average results over this many inference cycle
 ENGAGEMENT_THRESH  = 0.65       # det_score fallback threshold (used only if 3D landmarks unavailable)
 YAW_THRESH         = 30.0       # max |yaw| in degrees → person is facing screen (left/right)
 PITCH_THRESH       = 25.0       # max |pitch| in degrees → person is facing screen (up/down)
-DB_PATH            = "audience.db"
+
+# ── Database backend ──────────────────────────────────────────────────────────
+# DB_BACKEND = "sqlite"    → uses audience.db (default, no setup needed)
+# DB_BACKEND = "postgres"  → uses PostgreSQL (run: pip install psycopg2-binary)
+DB_BACKEND         = "sqlite"
+DB_PATH            = "audience.db"   # used only when DB_BACKEND = "sqlite"
+
+# PostgreSQL settings — only used when DB_BACKEND = "postgres"
+PG_HOST            = "localhost"
+PG_PORT            = 5432
+PG_DBNAME          = "smartaudience"
+PG_USER            = "postgres"
+PG_PASSWORD        = "password"
+
 API_HOST           = "0.0.0.0"  # 0.0.0.0 = accept connections from any device on the network
 API_PORT           = 8000
 SCREENSHOT_DIR     = "live_screenshots"
@@ -130,70 +149,97 @@ SCREENSHOT_DIR     = "live_screenshots"
 
 db_lock = threading.Lock()   # Only one thread can touch the DB at a time
 
-def open_db() -> sqlite3.Connection:
-    """
-    Open the database and create the analytics table if it does not exist.
-    Called once at startup from the main thread.
-    The returned connection is reused for the lifetime of the process.
-    """
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row   # makes rows behave like dicts
-    c = conn.cursor()
+# ── PostgreSQL compatibility wrapper ──────────────────────────────────────────
+# sqlite3 and psycopg2 have two differences that would break our code:
+#   1. Placeholder style: sqlite3 uses  ?   psycopg2 uses  %s
+#   2. Row access: sqlite3.Row supports dict-style access; psycopg2 returns tuples
+#
+# PGConnection wraps a psycopg2 connection and:
+#   - Replaces ? with %s in every SQL string automatically
+#   - Uses RealDictCursor so rows behave like dicts (same as sqlite3.Row)
+#   - Exposes .execute() and .commit() so the rest of the code is unchanged
+#
+# Result: all conn.execute(sql, params) calls work identically for both backends.
 
-    # Main analytics table.
-    # One row = one 10-second summary window.
-    # We store percentages (0.0–1.0) so the API can return them directly
-    # without the dashboard doing division.
-    c.execute("""
+class PGConnection:
+    """Thin wrapper that makes psycopg2 behave like sqlite3 for our use case."""
+
+    def __init__(self, pg_conn):
+        self._conn = pg_conn
+
+    def execute(self, sql: str, params=None):
+        import psycopg2.extras
+        # sqlite3 uses ? as placeholder; psycopg2 uses %s
+        sql = sql.replace("?", "%s")
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql, params or ())
+        return cur   # caller can .fetchone() / .fetchall() on this
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
+
+
+def open_db():
+    """
+    Open the database (SQLite or PostgreSQL based on DB_BACKEND config).
+    Creates tables if they don't exist, runs migration for older databases.
+    Returns a connection object — sqlite3.Connection or PGConnection wrapper.
+    Both expose the same .execute() / .commit() / .close() interface.
+    """
+    if DB_BACKEND == "postgres":
+        try:
+            import psycopg2
+        except ImportError:
+            print("\n[ERROR] psycopg2 is not installed.")
+            print("  Run:  pip install psycopg2-binary\n")
+            sys.exit(1)
+        pg_conn = psycopg2.connect(
+            host=PG_HOST, port=PG_PORT, dbname=PG_DBNAME,
+            user=PG_USER, password=PG_PASSWORD,
+        )
+        conn = PGConnection(pg_conn)
+        print(f"[DB] Connected to PostgreSQL  {PG_HOST}:{PG_PORT}/{PG_DBNAME}")
+    else:
+        raw = sqlite3.connect(DB_PATH, check_same_thread=False)
+        raw.row_factory = sqlite3.Row
+        conn = raw
+        print("[DB] Database ready:", DB_PATH)
+
+    # ── Create tables ────────────────────────────────────────────────────────
+    # SERIAL (PostgreSQL) vs INTEGER PRIMARY KEY AUTOINCREMENT (SQLite)
+    if DB_BACKEND == "postgres":
+        id_col = "id SERIAL PRIMARY KEY"
+    else:
+        id_col = "id INTEGER PRIMARY KEY AUTOINCREMENT"
+
+    conn.execute(f"""
         CREATE TABLE IF NOT EXISTS analytics (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            {id_col},
+            camera_id       TEXT    NOT NULL DEFAULT 'cam_01',
             timestamp       TEXT    NOT NULL,
             viewer_count    INTEGER NOT NULL,
-            male_count      INTEGER NOT NULL,
-            female_count    INTEGER NOT NULL,
-            male_pct        REAL    NOT NULL,
-            female_pct      REAL    NOT NULL,
+            male_count      INTEGER NOT NULL DEFAULT 0,
+            female_count    INTEGER NOT NULL DEFAULT 0,
+            male_pct        REAL    NOT NULL DEFAULT 0,
+            female_pct      REAL    NOT NULL DEFAULT 0,
             age_child_pct       REAL NOT NULL DEFAULT 0,
             age_youth_pct       REAL NOT NULL DEFAULT 0,
             age_adult_pct       REAL NOT NULL DEFAULT 0,
             age_middle_aged_pct REAL NOT NULL DEFAULT 0,
             age_senior_pct      REAL NOT NULL DEFAULT 0,
             dominant_age_group  TEXT NOT NULL DEFAULT 'unknown',
-            engagement_rate REAL    NOT NULL,
+            engagement_rate REAL    NOT NULL DEFAULT 0,
             dominant_ad     TEXT    NOT NULL DEFAULT 'General Ad'
         )
     """)
 
-    # Migration: add any new columns that don't exist yet in an older DB.
-    # ALTER TABLE ADD COLUMN is safe to run on a DB that already has the column
-    # as long as we catch the OperationalError it raises in that case.
-    new_columns = [
-        ("male_count",          "INTEGER NOT NULL DEFAULT 0"),
-        ("female_count",        "INTEGER NOT NULL DEFAULT 0"),
-        ("male_pct",            "REAL    NOT NULL DEFAULT 0"),
-        ("female_pct",          "REAL    NOT NULL DEFAULT 0"),
-        ("age_child_pct",       "REAL    NOT NULL DEFAULT 0"),
-        ("age_youth_pct",       "REAL    NOT NULL DEFAULT 0"),
-        ("age_adult_pct",       "REAL    NOT NULL DEFAULT 0"),
-        ("age_middle_aged_pct", "REAL    NOT NULL DEFAULT 0"),
-        ("age_senior_pct",      "REAL    NOT NULL DEFAULT 0"),
-        ("dominant_age_group",  "TEXT    NOT NULL DEFAULT 'unknown'"),
-        ("engagement_rate",     "REAL    NOT NULL DEFAULT 0"),
-        ("dominant_ad",         "TEXT    NOT NULL DEFAULT 'General Ad'"),
-        ("timestamp",           "TEXT    NOT NULL DEFAULT ''"),
-    ]
-    for col, col_type in new_columns:
-        try:
-            c.execute(f"ALTER TABLE analytics ADD COLUMN {col} {col_type}")
-        except sqlite3.OperationalError:
-            pass  # column already exists — skip
-
-    # Dwell sessions table.
-    # One row = one continuous audience session (people present → people leave).
-    # Population-level only: stores duration and counts, never who was there.
-    c.execute("""
+    conn.execute(f"""
         CREATE TABLE IF NOT EXISTS dwell_sessions (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            {id_col},
+            camera_id        TEXT NOT NULL DEFAULT 'cam_01',
             start_time       TEXT NOT NULL,
             end_time         TEXT NOT NULL,
             duration_seconds REAL NOT NULL,
@@ -202,8 +248,41 @@ def open_db() -> sqlite3.Connection:
         )
     """)
 
+    # ── SQLite migration — add new columns to existing databases ─────────────
+    # (PostgreSQL doesn't need this — it always creates fresh tables above)
+    if DB_BACKEND == "sqlite":
+        new_columns = [
+            ("camera_id",           "TEXT    NOT NULL DEFAULT 'cam_01'"),
+            ("male_count",          "INTEGER NOT NULL DEFAULT 0"),
+            ("female_count",        "INTEGER NOT NULL DEFAULT 0"),
+            ("male_pct",            "REAL    NOT NULL DEFAULT 0"),
+            ("female_pct",          "REAL    NOT NULL DEFAULT 0"),
+            ("age_child_pct",       "REAL    NOT NULL DEFAULT 0"),
+            ("age_youth_pct",       "REAL    NOT NULL DEFAULT 0"),
+            ("age_adult_pct",       "REAL    NOT NULL DEFAULT 0"),
+            ("age_middle_aged_pct", "REAL    NOT NULL DEFAULT 0"),
+            ("age_senior_pct",      "REAL    NOT NULL DEFAULT 0"),
+            ("dominant_age_group",  "TEXT    NOT NULL DEFAULT 'unknown'"),
+            ("engagement_rate",     "REAL    NOT NULL DEFAULT 0"),
+            ("dominant_ad",         "TEXT    NOT NULL DEFAULT 'General Ad'"),
+            ("timestamp",           "TEXT    NOT NULL DEFAULT ''"),
+        ]
+        for col, col_type in new_columns:
+            try:
+                conn.execute(f"ALTER TABLE analytics ADD COLUMN {col} {col_type}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
+        dwell_new = [
+            ("camera_id", "TEXT NOT NULL DEFAULT 'cam_01'"),
+        ]
+        for col, col_type in dwell_new:
+            try:
+                conn.execute(f"ALTER TABLE dwell_sessions ADD COLUMN {col} {col_type}")
+            except sqlite3.OperationalError:
+                pass
+
     conn.commit()
-    print("[DB] Database ready:", DB_PATH)
     return conn
 
 
@@ -486,19 +565,26 @@ def maybe_save_to_db(conn: sqlite3.Connection):
     with db_lock:
         conn.execute("""
             INSERT INTO analytics (
-                timestamp, viewer_count, male_count, female_count,
+                camera_id, timestamp, viewer_count, male_count, female_count,
                 male_pct, female_pct,
                 age_child_pct, age_youth_pct, age_adult_pct,
                 age_middle_aged_pct, age_senior_pct,
                 dominant_age_group, engagement_rate, dominant_ad
             ) VALUES (
-                :timestamp, :viewer_count, :male_count, :female_count,
-                :male_pct, :female_pct,
-                :age_child_pct, :age_youth_pct, :age_adult_pct,
-                :age_middle_aged_pct, :age_senior_pct,
-                :dominant_age_group, :engagement_rate, :dominant_ad
+                ?, ?, ?, ?, ?,
+                ?, ?,
+                ?, ?, ?,
+                ?, ?,
+                ?, ?, ?
             )
-        """, {"timestamp": ts, **smoothed})
+        """, (
+            CAMERA_ID, ts,
+            smoothed["viewer_count"], smoothed["male_count"], smoothed["female_count"],
+            smoothed["male_pct"], smoothed["female_pct"],
+            smoothed["age_child_pct"], smoothed["age_youth_pct"], smoothed["age_adult_pct"],
+            smoothed["age_middle_aged_pct"], smoothed["age_senior_pct"],
+            smoothed["dominant_age_group"], smoothed["engagement_rate"], smoothed["dominant_ad"],
+        ))
         conn.commit()
 
     last_saved_data = comparable
@@ -565,10 +651,10 @@ def _update_dwell(conn: sqlite3.Connection, viewer_count: int):
                     conn.execute(
                         """
                         INSERT INTO dwell_sessions
-                            (start_time, end_time, duration_seconds, peak_count, avg_count)
-                        VALUES (?, ?, ?, ?, ?)
+                            (camera_id, start_time, end_time, duration_seconds, peak_count, avg_count)
+                        VALUES (?, ?, ?, ?, ?, ?)
                         """,
-                        (start_ts, end_ts, round(duration, 1), dwell_peak, round(avg_count, 1))
+                        (CAMERA_ID, start_ts, end_ts, round(duration, 1), dwell_peak, round(avg_count, 1))
                     )
                     conn.commit()
 
@@ -605,6 +691,7 @@ def _update_dwell(conn: sqlite3.Connection, viewer_count: int):
 # FastAPI validates the data against these models before sending.
 class AnalyticsRow(BaseModel):
     id:                  int
+    camera_id:           str
     timestamp:           str
     viewer_count:        int
     male_count:          int
@@ -631,6 +718,7 @@ class SummaryResponse(BaseModel):
 
 class DwellSession(BaseModel):
     id:               int
+    camera_id:        str
     start_time:       str
     end_time:         str
     duration_seconds: float
@@ -676,12 +764,19 @@ def create_api(conn: sqlite3.Connection) -> FastAPI:
 
     # ── GET /api/v1/analytics/live ───────────────────────────────────────────
     # Returns the single most recent row — used for the "right now" panel.
+    # Optional: ?camera_id=cam_01 to filter by a specific camera.
     @api.get("/api/v1/analytics/live", response_model=AnalyticsRow)
-    def analytics_live():
+    def analytics_live(camera_id: Optional[str] = Query(default=None)):
         with db_lock:
-            row = conn.execute(
-                "SELECT * FROM analytics ORDER BY id DESC LIMIT 1"
-            ).fetchone()
+            if camera_id:
+                row = conn.execute(
+                    "SELECT * FROM analytics WHERE camera_id = ? ORDER BY id DESC LIMIT 1",
+                    (camera_id,)
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM analytics ORDER BY id DESC LIMIT 1"
+                ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="No analytics data yet. "
                                 "The system is collecting its first window — wait 10 seconds.")
@@ -689,28 +784,47 @@ def create_api(conn: sqlite3.Connection) -> FastAPI:
 
     # ── GET /api/v1/analytics/history ────────────────────────────────────────
     # Returns the last `limit` rows in chronological order (oldest first).
-    # Dashboard uses this to draw the time-series line charts.
+    # Optional: ?camera_id=cam_01 to filter by a specific camera.
     @api.get("/api/v1/analytics/history", response_model=List[AnalyticsRow])
-    def analytics_history(limit: int = Query(default=30, ge=1, le=1000)):
+    def analytics_history(limit: int = Query(default=30, ge=1, le=1000),
+                          camera_id: Optional[str] = Query(default=None)):
         with db_lock:
-            rows = conn.execute(
-                """
-                SELECT * FROM (
-                    SELECT * FROM analytics ORDER BY id DESC LIMIT ?
-                ) ORDER BY id ASC
-                """,
-                (limit,)
-            ).fetchall()
+            if camera_id:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM (
+                        SELECT * FROM analytics WHERE camera_id = ? ORDER BY id DESC LIMIT ?
+                    ) ORDER BY id ASC
+                    """,
+                    (camera_id, limit)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM (
+                        SELECT * FROM analytics ORDER BY id DESC LIMIT ?
+                    ) ORDER BY id ASC
+                    """,
+                    (limit,)
+                ).fetchall()
         return [dict(r) for r in rows]
 
     # ── GET /api/v1/analytics/summary ────────────────────────────────────────
     # Returns averages across the last `limit` rows — used for summary cards.
+    # Optional: ?camera_id=cam_01 to filter by a specific camera.
     @api.get("/api/v1/analytics/summary", response_model=SummaryResponse)
-    def analytics_summary(limit: int = Query(default=30, ge=1, le=1000)):
+    def analytics_summary(limit: int = Query(default=30, ge=1, le=1000),
+                          camera_id: Optional[str] = Query(default=None)):
         with db_lock:
-            rows = conn.execute(
-                "SELECT * FROM analytics ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
+            if camera_id:
+                rows = conn.execute(
+                    "SELECT * FROM analytics WHERE camera_id = ? ORDER BY id DESC LIMIT ?",
+                    (camera_id, limit)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM analytics ORDER BY id DESC LIMIT ?", (limit,)
+                ).fetchall()
 
         if not rows:
             raise HTTPException(status_code=404, detail="No data yet.")
@@ -735,18 +849,29 @@ def create_api(conn: sqlite3.Connection) -> FastAPI:
 
     # ── GET /api/v1/analytics/dwell ──────────────────────────────────────────
     # Returns the last `limit` dwell sessions (completed audience sessions).
-    # Each row = one continuous period where at least one person was present.
+    # Optional: ?camera_id=cam_01 to filter by a specific camera.
     @api.get("/api/v1/analytics/dwell", response_model=List[DwellSession])
-    def analytics_dwell(limit: int = Query(default=20, ge=1, le=200)):
+    def analytics_dwell(limit: int = Query(default=20, ge=1, le=200),
+                        camera_id: Optional[str] = Query(default=None)):
         with db_lock:
-            rows = conn.execute(
-                """
-                SELECT * FROM (
-                    SELECT * FROM dwell_sessions ORDER BY id DESC LIMIT ?
-                ) ORDER BY id ASC
-                """,
-                (limit,)
-            ).fetchall()
+            if camera_id:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM (
+                        SELECT * FROM dwell_sessions WHERE camera_id = ? ORDER BY id DESC LIMIT ?
+                    ) ORDER BY id ASC
+                    """,
+                    (camera_id, limit)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM (
+                        SELECT * FROM dwell_sessions ORDER BY id DESC LIMIT ?
+                    ) ORDER BY id ASC
+                    """,
+                    (limit,)
+                ).fetchall()
         return [dict(r) for r in rows]
 
     return api
