@@ -13,10 +13,11 @@
  *   This is called the "stroke-dasharray / stroke-dashoffset" technique.
  *
  * Props:
- *   rate — number 0.0 to 1.0 (e.g. 0.75 = 75% engaged)
+ *   rate     — number 0.0 to 1.0 (e.g. 0.75 = 75% engaged)
+ *   prevRate — number 0.0 to 1.0: previous window's rate (for trend arrow)
  */
 
-export default function EngagementGauge({ rate = 0 }) {
+export default function EngagementGauge({ rate = 0, prevRate = null }) {
   const pct    = Math.round((rate ?? 0) * 100);
   const radius = 54;
   const circ   = 2 * Math.PI * radius;  // full circumference
@@ -27,6 +28,12 @@ export default function EngagementGauge({ rate = 0 }) {
     pct >= 70 ? "#34d399" :   // green — high engagement
     pct >= 40 ? "#fbbf24" :   // yellow — medium
                 "#ef4444";    // red — low
+
+  // Trend vs previous window
+  const prevPct = prevRate !== null ? Math.round(prevRate * 100) : null;
+  const diff    = prevPct !== null ? pct - prevPct : null;
+  const trendIcon  = diff === null ? null : diff > 0 ? "↑" : diff < 0 ? "↓" : "→";
+  const trendColor = diff === null ? "" : diff > 0 ? "text-green-400" : diff < 0 ? "text-red-400" : "text-slate-400";
 
   return (
     <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 flex flex-col items-center justify-center">
@@ -60,6 +67,11 @@ export default function EngagementGauge({ rate = 0 }) {
       </svg>
 
       <div className="text-slate-500 text-xs mt-1">faces looking at display</div>
+      {trendIcon && (
+        <div className={`text-xs font-semibold mt-1 ${trendColor}`}>
+          {trendIcon} {Math.abs(diff)}% vs last window
+        </div>
+      )}
     </div>
   );
 }

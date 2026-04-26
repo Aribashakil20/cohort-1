@@ -59,8 +59,8 @@ const DEMO_SUMMARY = {
   dominant_ad: "Cars / Finance",
 };
 
-// Generate 30 history points with slight random variation
-const DEMO_HISTORY = Array.from({ length: 30 }, (_, i) => ({
+// Generate 40 history points with slight random variation
+const DEMO_HISTORY = Array.from({ length: 40 }, (_, i) => ({
   id: i + 1,
   camera_id: "cam_01",
   timestamp: new Date(Date.now() - (29 - i) * 10_000).toISOString(),
@@ -127,10 +127,23 @@ export default function App() {
   const adCategory  = live?.dominant_ad        ?? "—";
   const cameraId    = live?.camera_id          ?? "—";
 
+  // Dominant gender label for ad recommendation reasoning
+  const dominantGender = (live?.male_pct ?? 0) >= (live?.female_pct ?? 0) ? "Male" : "Female";
+
+  // Previous window engagement rate — second-to-last row in history
+  const prevRate = history && history.length >= 2
+    ? history[history.length - 2].engagement_rate
+    : null;
+
   const avgViewers    = summary?.avg_viewer_count != null
     ? summary.avg_viewer_count.toFixed(1) : "—";
   const avgEngagement = summary
     ? `${Math.round(summary.avg_engagement_rate * 100)}%` : "—";
+
+  // Total impressions today — sum of all viewer_count values in history
+  const impressionsToday = history && history.length > 0
+    ? history.reduce((sum, row) => sum + (row.viewer_count ?? 0), 0)
+    : "—";
 
   // Average dwell time across all recorded sessions
   const avgDwell = dwell && dwell.length > 0
@@ -152,7 +165,7 @@ export default function App() {
       <div className="p-4 md:p-6 space-y-4">
 
         {/* ── Row 1: 5 summary stat cards ─────────────────────────────── */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           <StatCard
             label="Viewers Now"
             value={viewers}
@@ -188,6 +201,13 @@ export default function App() {
             highlight="text-orange-400"
             sub={`${dwell?.length ?? 0} sessions recorded`}
           />
+          <StatCard
+            label="Impressions Today"
+            value={impressionsToday}
+            icon="👁️"
+            highlight="text-cyan-400"
+            sub="total viewers seen"
+          />
         </div>
 
         {/* ── Row 2: Gender bar + Engagement gauge ────────────────────── */}
@@ -200,7 +220,7 @@ export default function App() {
               femaleCount={femaleCount}
             />
           </div>
-          <EngagementGauge rate={engRate} />
+          <EngagementGauge rate={engRate} prevRate={prevRate} />
         </div>
 
         {/* ── Row 3: History line chart ────────────────────────────────── */}
@@ -210,7 +230,7 @@ export default function App() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <AgeChart data={live} />
           <DwellChart sessions={dwell} />
-          <AdRecommendation adCategory={adCategory} ageGroup={ageGroup} />
+          <AdRecommendation adCategory={adCategory} ageGroup={ageGroup} gender={dominantGender} />
         </div>
 
       </div>
