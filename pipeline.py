@@ -96,7 +96,10 @@ from gaze_estimation import is_looking_at_screen
 # Change these values to tune the system without touching any logic below.
 # ══════════════════════════════════════════════════════════════════════════════
 
-CAMERA_INDEX       = 0          # 0 = built-in webcam; 1 = first external camera
+CAMERA_SOURCE      = 0          # Webcam:   0 = built-in, 1 = first external
+                                # IP cam:   "rtsp://192.168.1.100:554/stream"
+                                # With auth:"rtsp://admin:pass@192.168.1.100:554/stream"
+RTSP_RECONNECT_DELAY = 5        # seconds to wait before retrying after a network drop
 MODEL_PACK         = "buffalo_l"  # InsightFace model; buffalo_s is faster but less accurate
 INFERENCE_EVERY    = 15         # Run InsightFace on every Nth frame
                                 # At 30fps this is every 0.5s. Lower = more frequent but laggier.
@@ -817,10 +820,11 @@ def draw_overlay(frame: np.ndarray, faces: list, fps: float, inf_ms: float, inf_
     overlay = out.copy()
     cv2.rectangle(overlay, (0, 0), (w, bar_h), (15, 15, 15), -1)
     cv2.addWeighted(overlay, 0.72, out, 0.28, 0, out)
+    cam_label = "RTSP" if is_rtsp(CAMERA_SOURCE) else f"CAM:{CAMERA_SOURCE}"
     hud = (f"Viewers:{total}  M:{males}  F:{females}  "
            f"Engaged:{engaged}/{total}  "
-           f"FPS:{fps:.1f}  AI:{inf_ms:.0f}ms  "
-           f"Interval:every {inf_every}f  |  Q=quit  S=shot  +/-=speed")
+           f"FPS:{fps:.1f}  AI:{inf_ms:.0f}ms  {cam_label}  "
+           f"|  Q=quit  S=shot  +/-=speed")
     cv2.putText(out, hud, (8, 26),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.48, (220, 220, 220), 1, cv2.LINE_AA)
 
@@ -836,6 +840,83 @@ def draw_overlay(frame: np.ndarray, faces: list, fps: float, inf_ms: float, inf_
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 220, 255), 1, cv2.LINE_AA)
 
     return out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 9.5 — CAMERA OPEN / RECONNECT
+#
+# Why a dedicated function?
+#   Opening a webcam and opening an RTSP stream need different handling:
+#   - Webcam:  VideoCapture(0) — fast, works instantly
+#   - RTSP:    VideoCapture("rtsp://...") — can hang silently if unreachable,
+#              needs buffer size set to 1 to avoid stale frames
+#
+# Buffer size explained:
+#   RTSP streams buffer frames internally. If inference takes 500ms and the
+#   buffer holds 5 frames, you're analysing 2.5-second-old video. Setting
+#   CAP_PROP_BUFFERSIZE = 1 means OpenCV discards old frames and always gives
+#   you the most recent one — critical for real-time analysis.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def is_rtsp(source) -> bool:
+    """Returns True if source is an RTSP/HTTP URL, False if it is a webcam index."""
+    return isinstance(source, str) and source.lower().startswith(("rtsp://", "http://", "https://"))
+
+
+def open_camera(source):
+    """
+    Open a camera (webcam or RTSP/IP) and return a cv2.VideoCapture object.
+    Exits the process with a clear message if the camera cannot be opened.
+
+    Parameters
+    ----------
+    source : int or str
+        0 / 1 / 2  → local webcam index
+        "rtsp://..." → RTSP network stream
+    """
+    src_label = f"RTSP stream  {source}" if is_rtsp(source) else f"webcam index {source}"
+    print(f"[*] Opening {src_label} ...")
+
+    cap = cv2.VideoCapture(source)
+
+    if is_rtsp(source):
+        # Keep only 1 frame in the internal buffer.
+        # Without this, OpenCV buffers several frames and you end up
+        # processing video that is several seconds old.
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+    if not cap.isOpened():
+        print(f"\n[ERROR] Could not open {src_label}.")
+        if is_rtsp(source):
+            print("  Check:")
+            print("  1. Camera is powered on and connected to the same network")
+            print("  2. RTSP URL is correct (try it in VLC first)")
+            print("  3. Username / password in the URL are correct")
+            print("  4. Camera firewall allows connections on port 554")
+        else:
+            print(f"  Change CAMERA_SOURCE at the top of this file.")
+            print(f"  Try 0, 1, or 2 for different connected cameras.")
+        sys.exit(1)
+
+    # Startup test — read one frame to confirm the stream is actually delivering data.
+    # isOpened() returning True just means the connection was accepted;
+    # it doesn't mean frames are flowing. A bad RTSP URL can pass isOpened()
+    # but fail on the first read.
+    ret, _ = cap.read()
+    if not ret:
+        print(f"\n[ERROR] Camera opened but first frame read failed.")
+        if is_rtsp(source):
+            print("  The camera accepted the connection but sent no video.")
+            print("  Check the stream path in the URL.")
+        cap.release()
+        sys.exit(1)
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    print(f"[+] Camera ready at {actual_w}x{actual_h}  ({src_label})")
+    return cap
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -862,19 +943,8 @@ def main():
     # 3. Start API server in background
     start_api_server(conn)
 
-    # 4. Open camera
-    print(f"[*] Opening camera {CAMERA_INDEX} ...")
-    cap = cv2.VideoCapture(CAMERA_INDEX)
-    if not cap.isOpened():
-        print(f"[ERROR] Could not open camera {CAMERA_INDEX}.")
-        print("  Change CAMERA_INDEX at the top of this file.")
-        sys.exit(1)
-
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"[+] Camera opened at {actual_w}x{actual_h}")
+    # 4. Open camera (webcam or RTSP — handled by open_camera())
+    cap = open_camera(CAMERA_SOURCE)
     print(f"[+] API docs: http://localhost:{API_PORT}/docs")
     print("    Press Q to quit | S to save screenshot | +/- to change speed\n")
 
@@ -892,8 +962,22 @@ def main():
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("[!] Camera read failed. Is the camera connected?")
-            break
+            if is_rtsp(CAMERA_SOURCE):
+                # Network drop — release the old connection and try to reconnect.
+                # We don't exit because network blips are expected in production.
+                print(f"[!] Stream lost. Reconnecting in {RTSP_RECONNECT_DELAY}s ...")
+                cap.release()
+                time.sleep(RTSP_RECONNECT_DELAY)
+                try:
+                    cap = open_camera(CAMERA_SOURCE)
+                    print("[+] Reconnected.")
+                except SystemExit:
+                    print("[!] Reconnect failed. Retrying ...")
+                continue   # skip this iteration, try cap.read() again
+            else:
+                # Webcam hardware failure — nothing we can do, exit cleanly.
+                print("[!] Webcam read failed. Is the camera disconnected?")
+                break
 
         frame_count += 1
         fps_counter += 1

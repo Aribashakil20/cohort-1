@@ -14,7 +14,7 @@ All of this happens in real time, and the numbers get saved to a database so you
 
 ---
 
-## Project Status: Phase 9 — Dwell Time Tracking (COMPLETE)
+## Project Status: Phase 10 — RTSP / IP Camera Support (COMPLETE)
 
 `pipeline.py` now runs everything at once with real gaze detection:
 - Live camera capture (OpenCV)
@@ -30,7 +30,7 @@ All of this happens in real time, and the numbers get saved to a database so you
 **Completed phases:** 1 (Caffe baseline) → 2 (DeepFace test) → 3 (InsightFace selected) →
 4 (model comparison) → 5 (age/gender pipeline) → 6 (ad mapping) → 7 (integrated pipeline + API + dashboard) → 8 (real gaze detection)
 
-**Next:** RTSP / IP camera support — replace webcam with a network camera stream.
+**Next:** PostgreSQL + multi-camera support — production-grade database and multi-stream deployment.
 
 ---
 
@@ -147,6 +147,193 @@ Male   34 | adult  Y:+67 P:+3 [AWAY]
 - `Y:+12` = yaw +12° (slightly right, within 30° threshold → counts as looking)
 - `P:-5`  = pitch -5° (slightly down, within 25° threshold → counts as looking)
 - `Y:+67` = yaw +67° (turned 67° right → outside threshold → [AWAY])
+
+---
+
+## Step 10 — RTSP / IP Camera Support
+
+### Why this was needed
+
+Until this step, the pipeline only worked with a webcam physically plugged into
+the laptop (`CAMERA_INDEX = 0`). In a real deployment — a shop, mall, office
+lobby — the camera is a network IP camera. It is mounted on the ceiling and
+connected over WiFi or ethernet. There is no USB cable going to a laptop.
+
+These cameras speak a protocol called **RTSP** (Real-Time Streaming Protocol).
+You access them with a URL instead of an index number:
+
+```
+rtsp://192.168.1.100:554/stream              ← basic
+rtsp://admin:pass@192.168.1.100:554/stream   ← with username + password
+```
+
+OpenCV can already read RTSP streams — `cv2.VideoCapture("rtsp://...")` works.
+But three new problems appear that don't exist with webcams.
+
+---
+
+### Problem 1 — Network drops
+
+A webcam is a USB device. If it fails, the laptop crashed or the cable fell out.
+You restart the program and plug it back in.
+
+A network stream can drop for 2 seconds because of a WiFi blip, then come back.
+If we just `break` out of the loop on every failed read, the entire pipeline
+shuts down every time there's a momentary network hiccup.
+
+**Solution — reconnect loop:**
+```python
+if not ret:
+    if is_rtsp(CAMERA_SOURCE):
+        print(f"[!] Stream lost. Reconnecting in {RTSP_RECONNECT_DELAY}s ...")
+        cap.release()                      # close the broken connection
+        time.sleep(RTSP_RECONNECT_DELAY)   # wait 5 seconds before retrying
+        cap = open_camera(CAMERA_SOURCE)   # try to reopen the stream
+        continue                           # go back to cap.read()
+    else:
+        # Webcam hardware failure — nothing to reconnect to
+        print("[!] Webcam read failed.")
+        break
+```
+
+For RTSP: release → wait → retry. The pipeline keeps running.
+For webcam: break immediately (hardware failure, can't recover automatically).
+
+---
+
+### Problem 2 — Stale frame buffering
+
+RTSP streams buffer multiple frames internally in OpenCV. Here is the problem:
+
+```
+InsightFace takes 500ms to run on one frame.
+OpenCV buffers 5 frames.
+By the time we read the next frame, it is 2.5 seconds old.
+
+You are analysing what the audience looked like 2.5 seconds ago,
+not what they look like right now.
+```
+
+For a real-time analytics system this is a significant accuracy problem.
+
+**Solution — set buffer size to 1:**
+```python
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+```
+
+This tells OpenCV: keep only the most recent frame in the buffer.
+When we call `cap.read()`, we always get the latest frame, not a stale one.
+This is only set for RTSP streams — webcams don't have this issue.
+
+---
+
+### Problem 3 — Silent startup hang
+
+When you do `cv2.VideoCapture("rtsp://...")` on an unreachable camera,
+OpenCV does NOT immediately return an error. It silently tries to connect
+for 30+ seconds, then eventually times out. During this time the program
+appears frozen with no output.
+
+Also: `cap.isOpened()` returning `True` only means the TCP connection was
+accepted. It does NOT mean video frames are flowing. A wrong stream path
+in the URL can pass `isOpened()` but fail on the first `cap.read()`.
+
+**Solution — two-stage startup test in `open_camera()`:**
+```python
+# Stage 1: check connection was accepted
+if not cap.isOpened():
+    print("[ERROR] Could not open stream")
+    sys.exit(1)
+
+# Stage 2: try reading one actual frame
+ret, _ = cap.read()
+if not ret:
+    print("[ERROR] Camera connected but no video frames arriving")
+    sys.exit(1)
+```
+
+If either check fails, the program exits immediately with a clear, specific
+error message explaining what to check.
+
+---
+
+### What changed in the code
+
+**Config section:**
+```python
+# Before:
+CAMERA_INDEX = 0
+
+# After:
+CAMERA_SOURCE = 0                    # webcam — change to "rtsp://..." for IP camera
+RTSP_RECONNECT_DELAY = 5             # seconds to wait before reconnect attempt
+```
+
+`CAMERA_SOURCE` accepts either an integer (webcam) or a string (RTSP URL).
+One config line change is all that's needed to switch between webcam and IP camera.
+
+**New helper: `is_rtsp(source)`**
+```python
+def is_rtsp(source) -> bool:
+    return isinstance(source, str) and source.lower().startswith(("rtsp://", "http://"))
+```
+
+Used throughout the code to decide whether we need RTSP-specific handling
+(buffer size, reconnect logic, richer error messages).
+
+**New function: `open_camera(source)` — Section 9.5**
+
+Centralises all camera-opening logic in one place:
+1. Prints which source is being opened
+2. Calls `cv2.VideoCapture(source)`
+3. Sets `CAP_PROP_BUFFERSIZE = 1` for RTSP
+4. Runs the two-stage startup test
+5. Sets resolution to 1280×720
+6. Returns the `cap` object, or `sys.exit(1)` with a clear message
+
+**Camera loop — reconnect on stream loss:**
+- `ret=False` + RTSP → release, sleep, reopen, continue
+- `ret=False` + webcam → break (same as before)
+
+**HUD overlay — shows which camera is active:**
+```
+CAM:0   ← webcam
+RTSP    ← IP camera stream
+```
+
+---
+
+### How to switch to an IP camera
+
+Change one line at the top of `pipeline.py`:
+
+```python
+# Webcam (default):
+CAMERA_SOURCE = 0
+
+# IP camera:
+CAMERA_SOURCE = "rtsp://192.168.1.100:554/stream"
+
+# IP camera with login:
+CAMERA_SOURCE = "rtsp://admin:password@192.168.1.100:554/stream"
+```
+
+Everything else (inference, database, API, dashboard) stays exactly the same.
+
+---
+
+### How to find your IP camera's RTSP URL
+
+Every camera brand has a different URL format. Common ones:
+
+| Brand | URL format |
+|---|---|
+| Hikvision | `rtsp://admin:pass@IP/h264Preview_01_main` |
+| Dahua | `rtsp://admin:pass@IP/cam/realmonitor?channel=1&subtype=0` |
+| Generic (ONVIF) | `rtsp://admin:pass@IP:554/stream1` |
+
+The easiest way to test: paste the URL into **VLC Media Player → Open Network Stream**.
+If VLC shows video, the URL works. If not, the URL is wrong.
 
 ---
 
