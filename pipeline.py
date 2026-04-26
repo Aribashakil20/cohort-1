@@ -70,6 +70,9 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # ─── Standard library ─────────────────────────────────────────────────────────
 import sys
+
+# Add utils/ to path so we can import gaze_estimation
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "utils"))
 import time
 import sqlite3
 import threading
@@ -85,6 +88,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# ─── Local ────────────────────────────────────────────────────────────────────
+from gaze_estimation import is_looking_at_screen
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — CONFIG
 # Change these values to tune the system without touching any logic below.
@@ -96,7 +102,9 @@ INFERENCE_EVERY    = 15         # Run InsightFace on every Nth frame
                                 # At 30fps this is every 0.5s. Lower = more frequent but laggier.
 SAVE_EVERY_SECONDS = 10         # Write one DB row every N seconds
 SMOOTH_WINDOW      = 3          # Average results over this many inference cycles before saving
-ENGAGEMENT_THRESH  = 0.65       # det_score above this → face is "looking at display"
+ENGAGEMENT_THRESH  = 0.65       # det_score fallback threshold (used only if 3D landmarks unavailable)
+YAW_THRESH         = 30.0       # max |yaw| in degrees → person is facing screen (left/right)
+PITCH_THRESH       = 25.0       # max |pitch| in degrees → person is facing screen (up/down)
 DB_PATH            = "audience.db"
 API_HOST           = "0.0.0.0"  # 0.0.0.0 = accept connections from any device on the network
 API_PORT           = 8000
@@ -302,11 +310,17 @@ def run_inference_thread(app, frame: np.ndarray):
         age_grp   = get_age_group(age)
         ad_cat    = get_ad_category(age_grp, gender)
 
-        # Engagement proxy:
-        # det_score is how confident InsightFace is that this is a real face.
-        # A high score also implies the face is frontal (facing camera).
-        # We treat det_score > ENGAGEMENT_THRESH as "looking at the display".
-        looking = det_score >= ENGAGEMENT_THRESH
+        # Real gaze detection using head pose estimation.
+        # is_looking_at_screen() runs solvePnP on InsightFace's 3D landmarks
+        # to compute yaw (left/right) and pitch (up/down) angles.
+        # If |yaw| < YAW_THRESH and |pitch| < PITCH_THRESH → looking at screen.
+        # Falls back to det_score proxy if 3D landmarks are unavailable.
+        looking, gaze_yaw, gaze_pitch = is_looking_at_screen(
+            face, frame.shape,
+            yaw_thresh=YAW_THRESH,
+            pitch_thresh=PITCH_THRESH,
+            det_fallback=ENGAGEMENT_THRESH,
+        )
 
         face_results.append({
             "bbox":        face.bbox.astype(int).tolist(),
@@ -315,6 +329,8 @@ def run_inference_thread(app, frame: np.ndarray):
             "gender":      gender,
             "det_score":   det_score,
             "looking":     looking,
+            "gaze_yaw":    gaze_yaw,    # degrees, None if fallback was used
+            "gaze_pitch":  gaze_pitch,  # degrees, None if fallback was used
             "ad_category": ad_cat,
         })
 
@@ -659,8 +675,16 @@ def draw_overlay(frame: np.ndarray, faces: list, fps: float, inf_ms: float, inf_
         x1, y1, x2, y2 = face["bbox"]
         color = (30, 100, 220) if face["gender"] == "Female" else (30, 140, 255)
         cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
-        label = f"{face['gender']} {face['age']} | {face['age_group']}"
-        engaged_label = " [LOOKING]" if face["looking"] else ""
+
+        # Show head pose angles if real gaze detection ran (yaw/pitch available)
+        # Otherwise show det_score (fallback mode)
+        if face.get("gaze_yaw") is not None:
+            pose_str = f" Y:{face['gaze_yaw']:+.0f} P:{face['gaze_pitch']:+.0f}"
+        else:
+            pose_str = f" conf:{face['det_score']:.2f}"
+
+        label = f"{face['gender']} {face['age']} | {face['age_group']}{pose_str}"
+        engaged_label = " [LOOKING]" if face["looking"] else " [AWAY]"
         cv2.putText(out, label + engaged_label,
                     (x1, max(y1 - 6, 14)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)

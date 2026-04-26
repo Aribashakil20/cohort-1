@@ -14,17 +14,139 @@ All of this happens in real time, and the numbers get saved to a database so you
 
 ---
 
-## Project Status: Phase 7 — Integrated Pipeline + API (IN PROGRESS)
+## Project Status: Phase 8 — Real Gaze Detection via Head Pose Estimation (COMPLETE)
 
-`pipeline.py` is now the single script that runs everything at once:
+`pipeline.py` now runs everything at once with real gaze detection:
 - Live camera capture (OpenCV)
 - InsightFace age + gender detection (ONNX, background thread)
+- **Head pose estimation (new)** — yaw + pitch from 3D landmarks via solvePnP
+- **Real engagement detection (new)** — |yaw| < 30° AND |pitch| < 25° = looking at screen
 - SQLite database with upgraded schema (engagement rate, age percentages)
 - FastAPI REST API server (port 8000) with 4 endpoints
 - Windows asyncio fix applied (SelectorEventLoop policy)
 - DB schema migration support (works on old and new databases)
+- React dashboard live at `http://localhost:5173`
 
-**Next:** Confirm API is reachable at `http://localhost:8000/docs`, then build the React dashboard (Step 8).
+**Completed phases:** 1 (Caffe baseline) → 2 (DeepFace test) → 3 (InsightFace selected) →
+4 (model comparison) → 5 (age/gender pipeline) → 6 (ad mapping) → 7 (integrated pipeline + API + dashboard) → 8 (real gaze detection)
+
+**Next:** Dwell time tracking — estimate how long visitors stay in frame.
+
+---
+
+## Step 8 — Real Gaze Detection via Head Pose Estimation
+
+### Why we needed this
+
+In Step 7, the "engagement" metric was a proxy:
+```
+looking = det_score >= 0.65
+```
+`det_score` is InsightFace's confidence that a face exists. A high score means
+"clear face visible" — not "person is looking at the screen." Someone standing
+sideways, talking to another person, can have a high det_score while looking
+completely away from the display.
+
+We needed actual head pose: where is the face *pointing*?
+
+---
+
+### What head pose estimation does
+
+We use **OpenCV's solvePnP** (solve Perspective-n-Point). Here's the idea:
+
+- We know the 3D shape of a generic human face (a standard 6-point model in mm)
+- InsightFace gives us where those same 6 face points appear in the 2D camera image
+- solvePnP solves: "what rotation and translation of the face maps the 3D model
+  onto the observed 2D image positions?"
+- From that rotation matrix we extract **Euler angles**: yaw (left/right turn)
+  and pitch (up/down tilt)
+
+```
+|yaw|   < 30°  →  face not turned more than 30° left or right
+|pitch| < 25°  →  face not tilted more than 25° up or down
+Both true       →  person IS looking at the screen
+```
+
+---
+
+### The 6 landmark points we use
+
+We don't use all 68 landmarks — just 6 that are geometrically well-distributed
+and stable (they don't move much with expression changes):
+
+| Landmark index | Point |
+|---|---|
+| 30 | Nose tip (origin — most stable) |
+| 8  | Chin |
+| 36 | Left eye, outer corner |
+| 45 | Right eye, outer corner |
+| 48 | Left mouth corner |
+| 54 | Right mouth corner |
+
+---
+
+### Camera matrix approximation
+
+We don't have a calibrated camera (no checkerboard calibration). We use a
+standard approximation:
+- Focal length ≈ frame width in pixels (a commonly used rule of thumb)
+- Principal point ≈ frame centre
+
+This is accurate enough for gaze detection — we don't need sub-degree precision,
+just "is the person facing roughly forward?"
+
+---
+
+### Rotation matrix → Euler angles
+
+solvePnP returns a rotation vector `rvec`. We convert it:
+
+```python
+R, _ = cv2.Rodrigues(rvec)         # rotation vector → 3×3 rotation matrix
+sy   = sqrt(R[0,0]² + R[1,0]²)    # check for gimbal lock
+pitch = atan2( R[2,1],  R[2,2])   # rotation around X axis (up/down)
+yaw   = atan2(-R[2,0],  sy)       # rotation around Y axis (left/right)
+roll  = atan2( R[1,0],  R[0,0])   # rotation around Z axis (head tilt)
+```
+
+We use pitch and yaw. Roll is ignored for gaze purposes.
+
+---
+
+### Fallback
+
+If `landmark_3d_68` is not returned by InsightFace for some reason (edge case),
+the code falls back to the old `det_score >= 0.65` proxy automatically.
+So nothing breaks even if the model behaves unexpectedly.
+
+---
+
+### What changed in the code
+
+**New file: `utils/gaze_estimation.py`**
+- `estimate_head_pose(landmark_3d_68, frame_shape)` — runs solvePnP, returns (yaw, pitch, roll)
+- `is_looking_at_screen(face, frame_shape, ...)` — calls estimate_head_pose, applies thresholds, handles fallback
+
+**Changes in `pipeline.py`**
+- Config: added `YAW_THRESH = 30.0` and `PITCH_THRESH = 25.0`
+- Imports: `from gaze_estimation import is_looking_at_screen`
+- `run_inference_thread()`: replaced `looking = det_score >= ENGAGEMENT_THRESH` with `looking, gaze_yaw, gaze_pitch = is_looking_at_screen(...)`
+- Face result dict: added `gaze_yaw` and `gaze_pitch` fields
+- `draw_overlay()`: bounding box label now shows `Y:+12 P:-5 [LOOKING]` (real angles) instead of just `[LOOKING]`
+
+---
+
+### What you see on screen now
+
+Each detected face shows:
+```
+Female 28 | adult  Y:+12 P:-5 [LOOKING]
+Male   34 | adult  Y:+67 P:+3 [AWAY]
+```
+- `Y:+12` = yaw +12° (slightly right, within 30° threshold → counts as looking)
+- `P:-5`  = pitch -5° (slightly down, within 25° threshold → counts as looking)
+- `Y:+67` = yaw +67° (turned 67° right → outside threshold → [AWAY])
 
 ---
 
