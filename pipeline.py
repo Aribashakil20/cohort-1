@@ -898,6 +898,13 @@ def open_camera(source):
             print(f"  Try 0, 1, or 2 for different connected cameras.")
         sys.exit(1)
 
+    # Set resolution BEFORE the test read.
+    # If we set resolution after reading a frame, OpenCV's internal buffer
+    # holds a frame at the old resolution while the camera switches to the new
+    # one — this causes a matrix dimension mismatch crash on the next read.
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
     # Startup test — read one frame to confirm the stream is actually delivering data.
     # isOpened() returning True just means the connection was accepted;
     # it doesn't mean frames are flowing. A bad RTSP URL can pass isOpened()
@@ -911,8 +918,6 @@ def open_camera(source):
         cap.release()
         sys.exit(1)
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"[+] Camera ready at {actual_w}x{actual_h}  ({src_label})")
