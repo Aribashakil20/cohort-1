@@ -152,136 +152,282 @@ Male   34 | adult  Y:+67 P:+3 [AWAY]
 
 ## Step 9 — Dwell Time Tracking (Population-Level)
 
-### Why dwell time matters
+### What is dwell time and why does it matter?
 
 Dwell time = how long an audience group stays in front of the display.
 It is one of the most important metrics in digital signage and retail analytics:
-- Short dwell (< 5s) = person walked past, didn't stop
-- Medium dwell (10–30s) = person noticed the display, glanced at it
-- Long dwell (> 30s) = person is engaged, reading or watching
+
+| Dwell duration | What it means |
+|---|---|
+| < 5 seconds | Person walked past — did not stop |
+| 5–15 seconds | Person glanced at the screen briefly |
+| 15–30 seconds | Person noticed and read something |
+| > 30 seconds | Person is genuinely engaged |
 
 Advertisers pay more for placements with high average dwell time because the
-audience is actually paying attention, not just walking through.
+audience actually stopped and paid attention — not just walked through.
 
 ---
 
-### Why we can't do individual tracking
+### The privacy problem
 
-Tracking individuals would mean: "Person A entered at 10:00, left at 10:15."
-That requires assigning an identity (face embedding) to each person and
-following them across frames. That violates the privacy requirements of this
-system — we must not track or re-identify anyone.
+The obvious way to track dwell time:
+> "Person A entered at 10:00, left at 10:15. Dwell = 15 minutes."
+
+This requires **individual tracking** — tagging each person's face, recognising
+them in every frame, following them until they leave. That is personal data.
+Our system must never identify or follow any individual.
 
 ---
 
-### The population-level session approach
+### The solution — think of a motion sensor light
 
-Instead we track the **presence state** of the audience:
+A motion sensor light doesn't know who you are. It just knows:
+- Someone is here → **light ON**
+- Everyone left → **light OFF**
+- Light was ON for 47 seconds
+
+We do exactly the same thing. We don't track people — we track **presence**.
 
 ```
-State: EMPTY (viewer_count == 0)
-  ↓  someone enters frame
-State: OCCUPIED (viewer_count > 0)   ← session active, timer running
-  ↓  everyone leaves frame
-State: EMPTY again                   ← session ends, duration saved
+Time:      0s     10s     20s     30s     40s     50s     60s
+Viewers:   0  0    1  2   2  1    1  0    0  0    1  1    0  0
+            \____/ \________________/ \____/ \________/ \____/
+             EMPTY       SESSION 1     EMPTY  SESSION 2  EMPTY
+                        (30 seconds)           (10s — saved)
+                        peak=2, avg=1.5        peak=1, avg=1.0
 ```
 
-We don't know:
-- Whether it was the same person who came back
-- How long any specific individual stayed
-
-We do know:
-- How long at least one person was continuously present
-- How many people (peak and average) were there during that window
-
-This is meaningful population-level data — same approach used in retail
-foot traffic analytics systems.
+Each ON-period is called a **session**. When it ends, we save it to the database.
 
 ---
 
-### Minimum session duration
+### The state machine
 
-Sessions shorter than 5 seconds are discarded. These are:
-- A person walking quickly past (not stopping)
-- A brief lighting change that triggered a false detection
-- Camera noise
+The core logic switches between two states:
 
-Only genuine "stopped in front of the display" events are recorded.
+```
+┌──────────┐    viewer_count goes > 0    ┌──────────────┐
+│          │ ─────────────────────────→  │   OCCUPIED   │
+│  EMPTY   │                             │ (session ON) │
+│          │ ←─────────────────────────  │              │
+└──────────┘    viewer_count goes = 0    └──────────────┘
+                → calculate duration
+                → save to dwell_sessions
+                → reset state
+```
+
+`_update_dwell()` is called every 10 seconds with the current viewer_count.
+It decides which state we're in and what action to take.
 
 ---
 
-### The session state machine
+### The code — explained line by line
 
+#### 1. New database table (added inside `open_db()`)
+
+```python
+c.execute("""
+    CREATE TABLE IF NOT EXISTS dwell_sessions (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        start_time       TEXT NOT NULL,    -- when the first person appeared
+        end_time         TEXT NOT NULL,    -- when the last person left
+        duration_seconds REAL NOT NULL,    -- total seconds the session lasted
+        peak_count       INTEGER NOT NULL, -- most people seen at one time
+        avg_count        REAL NOT NULL     -- average people across the session
+    )
+""")
 ```
-_update_dwell(conn, viewer_count) is called after every 10-second DB save.
 
-viewer_count > 0 AND session NOT active:
-    → start new session (record start_time, reset peak/samples)
-
-viewer_count > 0 AND session active:
-    → update peak_count if new high
-    → append to samples list (for average calculation)
-
-viewer_count == 0 AND session WAS active:
-    → calculate duration = now - start_time
-    → if duration >= 5s: save to dwell_sessions table
-    → reset state (active=False, peak=0, samples=[])
-```
+`CREATE TABLE IF NOT EXISTS` — safe to run every startup. If the table already
+exists it does nothing. If it's a fresh database it creates it.
+No column for "who was there" — only counts and times. Fully anonymous.
 
 ---
 
-### What changed in the code
+#### 2. Shared state variables (Section 5 of pipeline.py)
 
-**`open_db()`** — added `dwell_sessions` table:
-```sql
-CREATE TABLE IF NOT EXISTS dwell_sessions (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    start_time       TEXT NOT NULL,
-    end_time         TEXT NOT NULL,
-    duration_seconds REAL NOT NULL,
-    peak_count       INTEGER NOT NULL,
-    avg_count        REAL NOT NULL
-)
+```python
+dwell_active  = False   # is a session currently running?
+dwell_start   = 0.0     # unix timestamp — when did this session begin?
+dwell_peak    = 0       # highest viewer_count seen so far in this session
+dwell_samples = []      # list of viewer_count per 10s window, for calculating average
 ```
 
-**Section 5 (shared state)** — added 4 new global variables:
-- `dwell_active` — whether a session is currently running
-- `dwell_start` — epoch time when current session started
-- `dwell_peak` — max viewer_count seen in this session
-- `dwell_samples` — list of viewer_count readings per 10s window
-
-**Section 7.5 (new)** — `_update_dwell(conn, viewer_count)`:
-- State machine logic (described above)
-- Called from `maybe_save_to_db()` after every successful DB write
-
-**Section 8 (API)** — new endpoint and model:
-- `DwellSession` Pydantic model (6 fields)
-- `GET /api/v1/analytics/dwell?limit=20` — returns recent sessions
+These are global variables because `_update_dwell()` is called repeatedly.
+It needs to remember what happened last time it was called — globals do that.
 
 ---
 
-### Example API response from /api/v1/analytics/dwell
+#### 3. The state machine function (Section 7.5)
+
+```python
+MIN_DWELL_SECONDS = 5.0   # ignore sessions shorter than 5 seconds (walk-bys)
+
+def _update_dwell(conn, viewer_count):
+    global dwell_active, dwell_start, dwell_peak, dwell_samples
+
+    now = time.time()   # current time as a number (seconds since 1970)
+
+    if viewer_count > 0:
+
+        if not dwell_active:
+            # EMPTY → OCCUPIED: first person just appeared
+            dwell_active  = True
+            dwell_start   = now          # record when session started
+            dwell_peak    = viewer_count
+            dwell_samples = [viewer_count]
+            print(f"[Dwell] Session started")
+
+        else:
+            # Staying OCCUPIED: session continues, update running stats
+            dwell_peak = max(dwell_peak, viewer_count)  # keep the highest count seen
+            dwell_samples.append(viewer_count)          # record this window's count
+
+    else:   # viewer_count == 0
+
+        if dwell_active:
+            # OCCUPIED → EMPTY: everyone just left
+            duration = now - dwell_start   # how long did the session last?
+
+            if duration >= MIN_DWELL_SECONDS:
+                # Long enough to be meaningful — save to database
+                avg_count = sum(dwell_samples) / len(dwell_samples)
+
+                start_ts = datetime.fromtimestamp(dwell_start, tz=timezone.utc)...
+                end_ts   = datetime.fromtimestamp(now, tz=timezone.utc)...
+
+                with db_lock:
+                    conn.execute(
+                        "INSERT INTO dwell_sessions (...) VALUES (?, ?, ?, ?, ?)",
+                        (start_ts, end_ts, round(duration,1), dwell_peak, round(avg_count,1))
+                    )
+                    conn.commit()
+
+                print(f"[Dwell] Session saved — {duration:.0f}s, peak={dwell_peak}")
+
+            else:
+                # Too short — someone just walked past, throw it away
+                print(f"[Dwell] Too short ({duration:.0f}s) — skipped")
+
+            # Reset for the next session
+            dwell_active  = False
+            dwell_peak    = 0
+            dwell_samples = []
+```
+
+**Step-by-step example with real numbers:**
+
+| Time | viewer_count | dwell_active | What happens |
+|---|---|---|---|
+| 0s | 0 | False | Nothing — empty |
+| 10s | 0 | False | Nothing — still empty |
+| 20s | 2 | False | **Session starts.** active=True, start=20s, peak=2, samples=[2] |
+| 30s | 3 | True | Session continues. peak=3, samples=[2,3] |
+| 40s | 2 | True | Session continues. peak=3, samples=[2,3,2] |
+| 50s | 0 | True | **Session ends.** duration=30s, avg=2.3 → saved to DB |
+| 60s | 0 | False | Reset. Waiting for next session. |
+
+---
+
+#### 4. Where `_update_dwell()` gets called
+
+In `maybe_save_to_db()`, one line was added after the analytics write:
+
+```python
+# Write the regular analytics row (existing code)
+conn.execute("INSERT INTO analytics (...) VALUES (...)", {...})
+conn.commit()
+
+# NEW — update dwell tracking using the same viewer_count we just saved
+_update_dwell(conn, smoothed["viewer_count"])
+```
+
+This is an important design choice: dwell tracking runs on the **same 10-second
+clock** as everything else. No separate timer needed.
+
+---
+
+#### 5. New API endpoint (Section 8)
+
+```python
+# Pydantic model — defines the exact JSON shape
+class DwellSession(BaseModel):
+    id:               int
+    start_time:       str
+    end_time:         str
+    duration_seconds: float
+    peak_count:       int
+    avg_count:        float
+
+# New endpoint
+@api.get("/api/v1/analytics/dwell")
+def analytics_dwell(limit: int = Query(default=20)):
+    with db_lock:
+        rows = conn.execute(
+            "SELECT * FROM dwell_sessions ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+```
+
+Hit `http://localhost:8000/api/v1/analytics/dwell` to see all recorded sessions.
+
+---
+
+### Challenges and how they were solved
+
+#### Challenge 1 — Thread safety
+The API server (background thread) and camera loop (main thread) both access
+the database. Simultaneous writes corrupt SQLite.
+
+**Solution:** `db_lock` — same threading.Lock() used everywhere. `_update_dwell`
+wraps its INSERT in `with db_lock:` so it can never collide with another write.
+
+#### Challenge 2 — Backward compatibility
+The `audience.db` file already existed with just the `analytics` table.
+We needed to add a new table without breaking the old one.
+
+**Solution:** `CREATE TABLE IF NOT EXISTS` — SQLite only creates the table if
+it doesn't exist. Running this on an existing database just adds the new table
+and leaves `analytics` completely untouched.
+
+#### Challenge 3 — Walk-by noise
+If someone walks quickly past the camera, InsightFace detects them for 1–2
+seconds. Saving that as a dwell session pollutes the data.
+
+**Solution:** `MIN_DWELL_SECONDS = 5.0` — any session under 5 seconds is
+discarded with a "too short" log message. Genuine stops are 10+ seconds.
+
+#### Challenge 4 — Peak vs average
+Viewer count fluctuates within a session. At T=20s there are 2 people;
+at T=30s there are 3; at T=40s back to 2. A single end-of-session reading
+would miss the peak.
+
+**Solution:** Two separate metrics:
+- `dwell_peak` — updated with `max()` every window → captures the highest point
+- `dwell_samples` — list of all readings → average computed at session end
+Both stored in the DB so the dashboard can show either.
+
+---
+
+### Reading your actual test output
 
 ```json
-[
-  {
-    "id": 1,
-    "start_time": "2026-04-26T10:15:00Z",
-    "end_time": "2026-04-26T10:15:47Z",
-    "duration_seconds": 47.3,
-    "peak_count": 3,
-    "avg_count": 2.1
-  },
-  {
-    "id": 2,
-    "start_time": "2026-04-26T10:22:10Z",
-    "end_time": "2026-04-26T10:22:18Z",
-    "duration_seconds": 8.2,
-    "peak_count": 1,
-    "avg_count": 1.0
-  }
-]
+{
+  "id": 1,
+  "start_time": "2026-04-26T12:12:14Z",
+  "end_time":   "2026-04-26T12:12:44Z",
+  "duration_seconds": 30.1,
+  "peak_count": 1,
+  "avg_count":  1.0
+}
 ```
+
+- You appeared in front of the camera at **12:12:14**
+- You left at **12:12:44**
+- You stayed for **30.1 seconds**
+- Only 1 person the whole time (you), so peak=1, avg=1.0
+- This is exactly the kind of meaningful stop-and-look event the system is built to capture
 
 ---
 
