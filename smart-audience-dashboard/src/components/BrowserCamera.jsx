@@ -200,26 +200,7 @@ export default function BrowserCamera({ onClose }) {
   const [stats,    setStats]    = useState(null);
   const [running,  setRunning]  = useState(false);
 
-  // ── Load models ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    async function loadModels() {
-      try {
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
-          faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
-          faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
-        ]);
-        setPhase("cam_permission");
-      } catch (err) {
-        console.error("Model load error:", err);
-        setPhase("model_error");
-      }
-    }
-    loadModels();
-  }, []);
-
-  // ── Start camera ─────────────────────────────────────────────────────────
+  // ── Start camera (also called by "Try again" button) ─────────────────────
   const startCamera = useCallback(async () => {
     setCamError("");
     setPhase("cam_permission");
@@ -250,16 +231,33 @@ export default function BrowserCamera({ onClose }) {
     }
   }, []);
 
+  // ── Load models then immediately start camera ─────────────────────────────
   useEffect(() => {
-    if (phase === "cam_permission") {
-      startCamera();
+    async function init() {
+      try {
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL),
+          faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
+          faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+        ]);
+        // Models ready — now request camera
+        await startCamera();
+      } catch (err) {
+        console.error("Model load error:", err);
+        setPhase("model_error");
+      }
     }
+    init();
+  }, [startCamera]);
+
+  // ── Cleanup: stop stream on unmount ──────────────────────────────────────
+  useEffect(() => {
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Inference loop ───────────────────────────────────────────────────────
