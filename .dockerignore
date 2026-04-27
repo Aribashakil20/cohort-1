@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+audience.db
+live_screenshots/
+smart-audience-dashboard/node_modules/
+smart-audience-dashboard/.vite/
+smart-audience-dashboard/dist/
+model_testing/
+caffe_models/
+.git/

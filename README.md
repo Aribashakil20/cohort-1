@@ -29,19 +29,30 @@ Every 10 seconds, a summary row is written to the database. A REST API serves th
 SmartAudienceAnalysis/
 │
 ├── pipeline.py                   ← Run this. Camera + AI + API server in one script
+├── requirements.txt              ← Python dependencies (for pip or Docker)
+├── Dockerfile                    ← Container image for the pipeline
+├── docker-compose.yml            ← One-command full-stack startup
 ├── progress.md                   ← Full step-by-step project log with explanations
 │
 ├── smart-audience-dashboard/     ← React dashboard (Vite + Tailwind + Recharts)
 │   └── src/
 │       ├── components/
+│       │   ├── TabBar.jsx            ← 5-tab navigation bar
+│       │   ├── StatusBar.jsx         ← Header: camera switcher, WS indicator, demo mode
 │       │   ├── StatCard.jsx          ← Summary metric cards
 │       │   ├── GenderBar.jsx         ← Male/female split bar
 │       │   ├── AgeChart.jsx          ← Age group breakdown chart
 │       │   ├── HistoryChart.jsx      ← Viewers + engagement over time
-│       │   ├── EngagementGauge.jsx   ← Circular engagement gauge
+│       │   ├── EngagementGauge.jsx   ← Circular engagement gauge with trend arrow
 │       │   ├── DwellChart.jsx        ← Dwell session duration bar chart
-│       │   └── AdRecommendation.jsx  ← Current ad recommendation card
-│       ├── hooks/usePolling.js       ← Auto-refresh hook
+│       │   ├── AdRecommendation.jsx  ← Current ad recommendation card
+│       │   ├── AnalyticsPage.jsx     ← "Today's Analytics" tab (date picker + CSV export)
+│       │   ├── AdPerformancePage.jsx ← "Ad Performance" tab (A/B comparison mode)
+│       │   ├── AlertsPanel.jsx       ← "Alerts" tab (engagement anomaly log)
+│       │   └── SettingsPage.jsx      ← "Settings" tab (screen name, poll rate)
+│       ├── hooks/
+│       │   ├── usePolling.js         ← Auto-refresh hook (fallback for WebSocket)
+│       │   └── useWebSocket.js       ← Real-time WebSocket hook with auto-reconnect
 │       └── api.js                    ← Axios calls to FastAPI backend
 │
 ├── utils/
@@ -49,11 +60,6 @@ SmartAudienceAnalysis/
 │   └── live_insightface.py       ← Standalone webcam demo (no API)
 │
 ├── model_testing/                ← AI model comparison (Steps 1–4)
-│   ├── step1_caffe_test.py
-│   ├── step2_deepface_test.py
-│   ├── step3_insightface_test.py
-│   └── step4_compare.py
-│
 └── caffe_models/                 ← Caffe model weights (baseline testing)
 ```
 
@@ -145,11 +151,21 @@ Interactive docs: `http://localhost:8000/docs`
 |---|---|
 | `GET /api/v1/health` | Server + database status |
 | `GET /api/v1/analytics/live` | Most recent 10-second snapshot |
-| `GET /api/v1/analytics/history?limit=30` | Last N rows in time order (for charts) |
+| `GET /api/v1/analytics/history?limit=30` | Last N rows in time order (supports `?date=YYYY-MM-DD`) |
 | `GET /api/v1/analytics/summary?limit=30` | Averages across last N rows |
 | `GET /api/v1/analytics/dwell?limit=20` | Recent audience dwell sessions |
+| `GET /api/v1/alerts?limit=20` | Log of engagement anomaly events |
+| `GET /api/v1/cameras` | List of all camera IDs with data |
+| `GET /api/v1/export?date=YYYY-MM-DD` | Download analytics data as CSV |
+| `WS  /ws/live` | WebSocket — real-time push on every DB save |
 
-All endpoints accept an optional `?camera_id=cam_01` filter to scope results to one camera.
+All HTTP endpoints accept an optional `?camera_id=cam_01` filter to scope results to one camera.
+
+**API Key Auth:** Set `API_KEY = "yoursecret"` in `pipeline.py`. All HTTP requests must then include:
+```
+X-API-Key: yoursecret
+```
+Leave `API_KEY = ""` to allow unauthenticated access (default / development).
 
 **Example — `/api/v1/analytics/live`:**
 ```json
@@ -189,16 +205,20 @@ All endpoints accept an optional `?camera_id=cam_01` filter to scope results to 
 
 ## Dashboard Features
 
-| Panel | What it shows |
+**5 tabs:**
+
+| Tab | What it shows |
 |---|---|
-| **5 stat cards** | Viewers now, avg viewers, avg engagement, dominant age, avg dwell time |
-| **Gender bar** | Live male/female split with counts and percentages |
-| **Engagement gauge** | Circular gauge — green ≥70%, yellow ≥40%, red below |
-| **History chart** | Viewer count + engagement % over the last 40 data points |
-| **Age breakdown** | Horizontal bar chart of 5 age groups |
-| **Dwell chart** | Bar chart of session durations, colored by peak viewers |
-| **Ad recommendation** | Current recommended ad category with gradient color coding |
-| **Demo Mode** | Realistic fake data — present anywhere without a running camera |
+| **Live View** | Real-time stats: 6 metric cards, gender bar, engagement gauge, history chart, age chart, dwell chart, ad recommendation |
+| **Today's Analytics** | Date picker, hourly viewer + engagement chart, gender split, session duration distribution, CSV export button |
+| **Ad Performance** | Impressions per ad category, avg engagement per category, A/B comparison mode |
+| **Alerts** | Log of low-engagement events with severity, timestamp, viewer count |
+| **Settings** | Editable screen name, poll interval selector, read-only pipeline config reference |
+
+**Header features:**
+- Multi-camera switcher — dropdown appears automatically when multiple cameras have data
+- WebSocket indicator — blue "Live" dot when real-time connection is active, grey "Poll" when falling back
+- Demo Mode — fill all charts with realistic fake data anywhere, no pipeline needed
 
 ---
 
@@ -304,6 +324,90 @@ InsightFace found 53% more faces than Caffe and returns numeric ages (e.g. 34) p
 
 ---
 
+## Docker — One-Command Startup
+
+### Run everything with Docker Compose
+
+```bash
+docker compose up
+```
+
+This starts:
+- **pipeline** container — Python + InsightFace + FastAPI on port 8000
+- **dashboard** container — React dev server on port 5173
+
+Open `http://localhost:5173` in your browser.
+
+### With PostgreSQL
+
+```bash
+docker compose --profile postgres up
+```
+
+### Configuration via `.env`
+
+Create a `.env` file next to `docker-compose.yml`:
+
+```env
+CAMERA_SOURCE=rtsp://admin:password@192.168.1.100:554/stream
+CAMERA_ID=entrance
+API_KEY=mysecretkey123
+WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
+---
+
+## Webhook Alerts
+
+When `WEBHOOK_URL` is set, the pipeline POSTs a JSON payload whenever engagement drops below `WEBHOOK_ENGAGEMENT_THRESHOLD` (default 25%):
+
+```json
+{
+  "text": "⚠️ Low Engagement Alert — cam_01\nEngagement: 18% (threshold: 25%)\nViewers: 2 | Ad: Cars / Finance"
+}
+```
+
+This payload format is compatible with **Slack Incoming Webhooks**, n8n, Zapier, and any HTTP POST endpoint.
+
+Configure in `pipeline.py`:
+```python
+WEBHOOK_URL                  = "https://hooks.slack.com/services/..."
+WEBHOOK_ENGAGEMENT_THRESHOLD = 0.25   # 25%
+WEBHOOK_COOLDOWN_SECONDS     = 60     # max one alert per minute
+```
+
+---
+
+## CSV Export
+
+Download all analytics data for a specific day:
+
+```
+GET /api/v1/export?date=2026-04-26&camera_id=cam_01
+```
+
+Or click the **⬇ Export CSV** button in the Today's Analytics tab.
+
+---
+
+## WebSocket Real-Time Streaming
+
+Connect to `ws://localhost:8000/ws/live` to receive a JSON push every time a new analytics row is saved (every ~10 seconds). The dashboard uses this automatically — the blue "Live" dot in the header confirms the connection.
+
+The payload has the same shape as `GET /api/v1/analytics/live`:
+```json
+{
+  "camera_id": "cam_01",
+  "timestamp": "2026-04-26T14:32:10Z",
+  "viewer_count": 3,
+  "engagement_rate": 0.667,
+  "dominant_ad": "Cars / Finance",
+  ...
+}
+```
+
+---
+
 ## What Has Been Built
 
 - [x] Live camera capture — webcam and RTSP/IP camera support
@@ -319,12 +423,20 @@ InsightFace found 53% more faces than Caffe and returns numeric ages (e.g. 34) p
 - [x] **PostgreSQL support** — production-grade, multi-writer safe
 - [x] **Multi-camera support** — camera_id tags all rows, API filters by camera
 - [x] Thread-safe DB reads/writes (threading.Lock)
-- [x] FastAPI REST API — 5 endpoints with Pydantic validation
+- [x] FastAPI REST API — 8 endpoints with Pydantic validation
 - [x] **RTSP / IP camera support** with auto-reconnect on network drop
-- [x] React dashboard — live charts, gender bar, engagement gauge, age breakdown
+- [x] **WebSocket real-time streaming** — push on every DB save, zero-lag updates
+- [x] **CSV export** — download any day's analytics data via API or dashboard button
+- [x] **Webhook alerts** — POST to Slack/n8n/Zapier when engagement drops below threshold
+- [x] **API key authentication** — optional X-API-Key header protection
+- [x] **Docker + docker-compose** — one-command full-stack startup
+- [x] React dashboard — 5 tabs (Live, Analytics, Ad Performance, Alerts, Settings)
+- [x] **Multi-camera switcher** — dropdown in header when multiple cameras are active
+- [x] **Date range selector** — view any past day's analytics with hourly breakdown
+- [x] **A/B comparison mode** — compare two ad categories head-to-head in Ad Performance tab
+- [x] **Alerts tab** — real-time log of engagement anomalies with severity levels
 - [x] **Dwell time chart** — session durations colored by peak viewer count
 - [x] **Demo Mode** — realistic fake data for presenting without a camera
-- [x] Camera badge + connection status in dashboard header
 - [x] Windows asyncio fix for Uvicorn in background thread
 - [x] DB schema migration — works on existing and new databases
 

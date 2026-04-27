@@ -31,27 +31,84 @@ const CATEGORY_CONFIG = {
   "No audience":              { gradient: "from-slate-800 to-slate-700",  icon: "📺" },
 };
 
-export default function AdRecommendation({ adCategory, ageGroup, gender }) {
+const EMOTION_EMOJI = {
+  happiness: "😊", surprise: "😮", neutral: "😐",
+  sadness: "😢", anger: "😠", disgust: "🤢", fear: "😨", contempt: "😒",
+};
+
+const NEGATIVE_EMOTIONS = new Set(["anger", "disgust", "contempt"]);
+
+export default function AdRecommendation({ adCategory, ageGroup, gender, emotion, qualityScore, crowdGender, ageConfident }) {
   const config   = CATEGORY_CONFIG[adCategory] ?? CATEGORY_CONFIG["General Ad"];
   const gradient = config.gradient;
   const icon     = config.icon;
 
+  const emotionEmoji  = EMOTION_EMOJI[emotion] ?? "😐";
+  const isOverridden  = emotion && NEGATIVE_EMOTIONS.has(emotion);
+  const isMixedGender = crowdGender === "mixed";
+  const qualPct       = qualityScore ?? null;
+
   return (
     <div className={`bg-gradient-to-br ${gradient} rounded-xl p-5 border border-slate-600`}>
-      <div className="text-slate-300 text-sm font-medium mb-2">Recommended Ad</div>
-      {/* Icon + category name */}
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-3xl">{icon}</span>
-        <div className="text-white text-xl font-bold">{adCategory ?? "—"}</div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-slate-300 text-sm font-medium">Recommended Ad</div>
+        <div className="flex gap-1 flex-wrap justify-end">
+          {isOverridden && (
+            <span className="text-xs bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full">
+              Mood override
+            </span>
+          )}
+          {isMixedGender && (
+            <span className="text-xs bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 px-2 py-0.5 rounded-full">
+              Mixed gender
+            </span>
+          )}
+          {!ageConfident && (
+            <span className="text-xs bg-slate-500/20 text-slate-300 border border-slate-500/30 px-2 py-0.5 rounded-full">
+              Mixed age
+            </span>
+          )}
+        </div>
       </div>
-      {/* Why this ad — shows the audience profile that triggered it */}
-      <div className="text-slate-400 text-xs">
+
+      {/* Icon + category name */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-3xl">{icon}</span>
+        <div className="text-white text-xl font-bold leading-tight">{adCategory ?? "—"}</div>
+      </div>
+
+      {/* Audience profile */}
+      <div className="text-slate-400 text-xs mb-2">
         Audience:{" "}
         <span className="text-slate-200 capitalize">{ageGroup ?? "—"}</span>
         {gender && gender !== "—" && (
           <span className="text-slate-300"> · {gender}</span>
         )}
+        {emotion && (
+          <span className="text-slate-300"> · {emotionEmoji} {emotion}</span>
+        )}
       </div>
+
+      {/* Quality score bar */}
+      {qualPct != null && (
+        <div className="mt-3 pt-3 border-t border-white/10">
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-slate-400">Quality Score</span>
+            <span className={`font-bold ${qualPct >= 70 ? "text-green-300" : qualPct >= 40 ? "text-yellow-300" : "text-red-300"}`}>
+              {qualPct}/100
+            </span>
+          </div>
+          <div className="w-full h-1.5 bg-black/20 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{
+                width: `${qualPct}%`,
+                backgroundColor: qualPct >= 70 ? "#34d399" : qualPct >= 40 ? "#fbbf24" : "#ef4444",
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,95 @@
+# ── docker-compose.yml — Smart Audience Analysis ───────────────────────────
+#
+# Services:
+#   pipeline   — Python camera + AI + FastAPI server
+#   dashboard  — React frontend (Vite dev server)
+#
+# Usage:
+#   docker compose up          # start everything
+#   docker compose up -d       # start in background
+#   docker compose down        # stop everything
+#   docker compose logs -f     # stream logs
+#
+# To override config without editing this file:
+#   Create a .env file next to this file with key=value pairs.
+#   Example:
+#     CAMERA_SOURCE=rtsp://192.168.1.100:554/stream
+#     CAMERA_ID=cam_01
+#     API_KEY=mysecretkey123
+#     WEBHOOK_URL=https://hooks.slack.com/services/...
+# ────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Python pipeline ──────────────────────────────────────────────────────
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smart-audience-pipeline
+    restart: unless-stopped
+    ports:
+      - "8000:8000"   # FastAPI + WebSocket
+    volumes:
+      - pipeline-data:/data          # SQLite database persisted across restarts
+      - ./live_screenshots:/app/live_screenshots
+    environment:
+      # Camera — change to your RTSP URL for a network camera
+      CAMERA_SOURCE: ${CAMERA_SOURCE:-0}
+      CAMERA_ID:     ${CAMERA_ID:-cam_01}
+      DB_BACKEND:    ${DB_BACKEND:-sqlite}
+      DB_PATH:       /data/audience.db
+      API_HOST:      0.0.0.0
+      API_PORT:      8000
+      API_KEY:       ${API_KEY:-}
+      WEBHOOK_URL:   ${WEBHOOK_URL:-}
+      # PostgreSQL (only used when DB_BACKEND=postgres)
+      PG_HOST:       ${PG_HOST:-postgres}
+      PG_PORT:       ${PG_PORT:-5432}
+      PG_DBNAME:     ${PG_DBNAME:-smartaudience}
+      PG_USER:       ${PG_USER:-postgres}
+      PG_PASSWORD:   ${PG_PASSWORD:-password}
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false   # only enforced when postgres service is enabled
+
+  # ── React dashboard ──────────────────────────────────────────────────────
+  dashboard:
+    image: node:lts-alpine
+    container_name: smart-audience-dashboard
+    working_dir: /app
+    volumes:
+      - ./smart-audience-dashboard:/app
+      - /app/node_modules          # anonymous volume so host node_modules don't leak in
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host"
+    environment:
+      VITE_API_BASE: http://localhost:8000
+    depends_on:
+      - pipeline
+
+  # ── PostgreSQL (optional — only used when DB_BACKEND=postgres) ───────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: smart-audience-postgres
+    restart: unless-stopped
+    profiles: ["postgres"]   # only starts with: docker compose --profile postgres up
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB:       ${PG_DBNAME:-smartaudience}
+      POSTGRES_USER:     ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pipeline-data:
+  postgres-data:

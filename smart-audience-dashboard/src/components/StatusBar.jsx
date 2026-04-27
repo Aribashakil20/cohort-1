@@ -2,30 +2,54 @@
  * StatusBar.jsx — Top bar: title, camera badge, demo toggle, connection status
  *
  * Props:
- *   connected  — boolean: is the backend reachable?
- *   lastUpdate — Date or null: when we last got fresh data
- *   cameraId   — string: which camera is active (e.g. "cam_01")
- *   demoMode   — boolean: is demo mode on?
- *   onToggleDemo — function: called when user clicks the demo button
+ *   connected      — boolean: is the backend reachable?
+ *   wsConnected    — boolean: WebSocket real-time connection status
+ *   lastUpdate     — Date or null: when we last got fresh data
+ *   cameraId       — string: currently active camera id
+ *   cameras        — string[]: list of available camera ids (for switcher)
+ *   onCameraChange — function(id): called when user picks a different camera
+ *   screenName     — string: user-defined location label
+ *   demoMode       — boolean: is demo mode on?
+ *   onToggleDemo   — function: called when user clicks the demo button
  */
 
-export default function StatusBar({ connected, lastUpdate, cameraId, demoMode, onToggleDemo }) {
+export default function StatusBar({
+  connected, wsConnected, lastUpdate,
+  cameraId, cameras = [], onCameraChange,
+  screenName, demoMode, onToggleDemo,
+}) {
   const timeStr = lastUpdate ? lastUpdate.toLocaleTimeString() : "—";
 
   return (
     <div className="flex items-center justify-between px-6 py-3 bg-slate-950 border-b border-slate-700 flex-wrap gap-2">
 
-      {/* Left — title + camera badge */}
-      <div className="flex items-center gap-3">
+      {/* Left — title + screen name + camera switcher */}
+      <div className="flex items-center gap-3 flex-wrap">
         <span className="text-white font-bold text-lg tracking-tight">
           Smart Audience Analysis
         </span>
-        <span className="text-slate-500 text-sm hidden sm:inline">Live Dashboard</span>
-        {cameraId && (
+        {screenName && (
+          <span className="text-slate-400 text-sm hidden sm:inline">{screenName}</span>
+        )}
+
+        {/* Camera switcher — dropdown when multiple cameras, badge when single */}
+        {cameras.length > 1 ? (
+          <select
+            value={cameraId || ""}
+            onChange={(e) => onCameraChange(e.target.value || null)}
+            className="bg-slate-700 text-slate-300 text-xs font-mono px-2 py-0.5 rounded border border-slate-600 focus:outline-none focus:border-blue-500"
+          >
+            <option value="">All cameras</option>
+            {cameras.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        ) : cameraId ? (
           <span className="bg-slate-700 text-slate-300 text-xs font-mono px-2 py-0.5 rounded">
             {cameraId}
           </span>
-        )}
+        ) : null}
+
         {demoMode && (
           <span className="bg-yellow-500 text-slate-900 text-xs font-bold px-2 py-0.5 rounded animate-pulse">
             DEMO
@@ -33,10 +57,10 @@ export default function StatusBar({ connected, lastUpdate, cameraId, demoMode, o
         )}
       </div>
 
-      {/* Right — demo toggle + status */}
+      {/* Right — demo toggle + WS indicator + connection status */}
       <div className="flex items-center gap-4 text-sm flex-wrap">
 
-        {/* Demo mode toggle button */}
+        {/* Demo mode toggle */}
         <button
           onClick={onToggleDemo}
           className={`text-xs px-3 py-1 rounded border transition-colors ${
@@ -48,19 +72,29 @@ export default function StatusBar({ connected, lastUpdate, cameraId, demoMode, o
           {demoMode ? "Exit Demo" : "Demo Mode"}
         </button>
 
-        {/* Connection indicator */}
+        {/* WebSocket real-time indicator */}
+        {!demoMode && (
+          <div className="flex items-center gap-1.5 text-xs" title={wsConnected ? "Real-time WebSocket active" : "Polling mode"}>
+            <span className={`inline-block w-2 h-2 rounded-full ${wsConnected ? "bg-blue-400 animate-pulse" : "bg-slate-600"}`} />
+            <span className={wsConnected ? "text-blue-400" : "text-slate-600"}>
+              {wsConnected ? "Live" : "Poll"}
+            </span>
+          </div>
+        )}
+
+        {/* Backend connection indicator */}
         <div className="flex items-center gap-2">
           <span
             className={`inline-block w-2.5 h-2.5 rounded-full ${
-              demoMode ? "bg-yellow-400" :
+              demoMode  ? "bg-yellow-400" :
               connected ? "bg-green-400 animate-pulse" : "bg-red-500"
             }`}
           />
           <span className={
-            demoMode   ? "text-yellow-400" :
-            connected  ? "text-green-400"  : "text-red-400"
+            demoMode  ? "text-yellow-400" :
+            connected ? "text-green-400"  : "text-red-400"
           }>
-            {demoMode ? "Demo data" : connected ? "Backend connected" : "Backend offline"}
+            {demoMode ? "Demo data" : connected ? "Connected" : "Offline"}
           </span>
         </div>
 

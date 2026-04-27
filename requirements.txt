@@ -1,0 +1,8 @@
+insightface
+onnxruntime
+opencv-python-headless
+fastapi
+uvicorn[standard]
+numpy
+requests
+psycopg2-binary

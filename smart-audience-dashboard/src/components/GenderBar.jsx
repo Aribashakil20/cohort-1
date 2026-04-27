@@ -12,13 +12,29 @@
  *   femaleCount — raw count
  */
 
-export default function GenderBar({ malePct = 0, femalePct = 0, maleCount = 0, femaleCount = 0 }) {
+export default function GenderBar({ malePct = 0, femalePct = 0, maleCount = 0, femaleCount = 0, crowdGender = "mixed" }) {
   const maleW   = Math.round(malePct   * 100);
   const femaleW = Math.round(femalePct * 100);
+  const isMixed = crowdGender === "mixed";
 
   return (
     <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
-      <div className="text-slate-400 text-sm font-medium mb-3">Gender Split</div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-slate-400 text-sm font-medium">Gender Split</div>
+        {isMixed ? (
+          <span className="text-xs bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 px-2 py-0.5 rounded-full">
+            Mixed crowd — neutral ad
+          </span>
+        ) : (
+          <span className={`text-xs px-2 py-0.5 rounded-full border ${
+            crowdGender === "Male"
+              ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
+              : "bg-pink-500/20 text-pink-300 border-pink-500/30"
+          }`}>
+            {crowdGender} majority
+          </span>
+        )}
+      </div>
 
       {/* Stacked bar */}
       <div className="w-full h-6 rounded-full overflow-hidden flex bg-slate-700">

@@ -74,6 +74,9 @@ import sys
 # Add utils/ to path so we can import gaze_estimation
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "utils"))
 import time
+import asyncio
+import csv
+import io
 import sqlite3
 import threading
 from collections import deque, Counter
@@ -84,12 +87,18 @@ from typing import Optional, List
 import cv2
 import numpy as np
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 # ─── Local ────────────────────────────────────────────────────────────────────
-from gaze_estimation import is_looking_at_screen
+from gaze_estimation    import is_looking_at_screen
+from emotion_detection  import (
+    load_emotion_model, analyze_emotion,
+    emotion_quality_weight, is_negative,
+    EMOTION_LABELS,
+)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — CONFIG
@@ -107,6 +116,15 @@ CAMERA_ID          = "cam_01"   # Unique name for this camera instance.
                                 # from different cameras never gets mixed up.
 
 MODEL_PACK         = "buffalo_l"  # InsightFace model; buffalo_s is faster but less accurate
+USE_GPU            = True       # Set False to force CPU even if CUDA is available
+VISITOR_SIMILARITY_THRESHOLD = 0.50  # cosine similarity ≥ this → same person (0.0–1.0)
+VISITOR_EXPIRE_SECONDS       = 300   # forget a face after 5 min of absence
+GENDER_CONFIDENCE_THRESHOLD  = 0.60  # one gender must be ≥ this % of crowd to drive a gendered ad
+                                     # e.g. 4M + 2F = 67% male → gendered ad shown
+                                     # e.g. 3M + 3F = 50% each → "Lifestyle / Travel" (neutral)
+AGE_CONFIDENCE_THRESHOLD     = 0.60  # dominant age group must be ≥ this % of crowd to drive age-targeted ad
+                                     # e.g. 6 adults + 4 youth = 60% adult → age-targeted ad
+                                     # e.g. 4 adults + 3 youth + 3 senior → no clear majority → general ad
 INFERENCE_EVERY    = 15         # Run InsightFace on every Nth frame
                                 # At 30fps this is every 0.5s. Lower = more frequent but laggier.
 SAVE_EVERY_SECONDS = 10         # Write one DB row every N seconds
@@ -132,6 +150,20 @@ API_HOST           = "0.0.0.0"  # 0.0.0.0 = accept connections from any device o
 API_PORT           = 8000
 SCREENSHOT_DIR     = "live_screenshots"
 
+# ── Security ──────────────────────────────────────────────────────────────────
+# API_KEY: leave empty "" to allow all clients (default / development).
+# Set to a secret string (e.g. "mysecretkey123") to require
+# X-API-Key: mysecretkey123 header on every HTTP request.
+API_KEY            = ""
+
+# ── Webhook alerts ────────────────────────────────────────────────────────────
+# When engagement drops below WEBHOOK_THRESHOLD, we POST a JSON payload to
+# WEBHOOK_URL. Works with Slack Incoming Webhooks, n8n, Zapier, custom servers.
+# Leave WEBHOOK_URL empty to disable.
+WEBHOOK_URL                  = ""
+WEBHOOK_ENGAGEMENT_THRESHOLD = 0.25   # alert when engagement < 25%
+WEBHOOK_COOLDOWN_SECONDS     = 60     # don't fire more than once per minute
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 2 — DATABASE
 #
@@ -148,6 +180,18 @@ SCREENSHOT_DIR     = "live_screenshots"
 # ══════════════════════════════════════════════════════════════════════════════
 
 db_lock = threading.Lock()   # Only one thread can touch the DB at a time
+
+# ── WebSocket broadcast state ─────────────────────────────────────────────────
+# ws_clients: set of active WebSocket connections (managed inside create_api)
+# _api_loop:  the asyncio event loop uvicorn is running on — captured at startup
+#             so that the sync camera thread can schedule async broadcasts via
+#             asyncio.run_coroutine_threadsafe()
+ws_clients: set  = set()
+_api_loop        = None
+
+# ── Alert / webhook throttle ──────────────────────────────────────────────────
+_last_webhook_ts = 0.0
+_last_alert_ts   = 0.0
 
 # ── PostgreSQL compatibility wrapper ──────────────────────────────────────────
 # sqlite3 and psycopg2 have two differences that would break our code:
@@ -232,7 +276,14 @@ def open_db():
             age_senior_pct      REAL NOT NULL DEFAULT 0,
             dominant_age_group  TEXT NOT NULL DEFAULT 'unknown',
             engagement_rate REAL    NOT NULL DEFAULT 0,
-            dominant_ad     TEXT    NOT NULL DEFAULT 'General Ad'
+            dominant_ad     TEXT    NOT NULL DEFAULT 'General Ad',
+            dominant_emotion     TEXT NOT NULL DEFAULT 'neutral',
+            emotion_happy_pct    REAL NOT NULL DEFAULT 0,
+            emotion_neutral_pct  REAL NOT NULL DEFAULT 0,
+            emotion_surprise_pct REAL NOT NULL DEFAULT 0,
+            emotion_negative_pct REAL NOT NULL DEFAULT 0,
+            engagement_quality   REAL NOT NULL DEFAULT 0,
+            new_visitors         INTEGER NOT NULL DEFAULT 0
         )
     """)
 
@@ -245,6 +296,18 @@ def open_db():
             duration_seconds REAL NOT NULL,
             peak_count       INTEGER NOT NULL,
             avg_count        REAL NOT NULL
+        )
+    """)
+
+    conn.execute(f"""
+        CREATE TABLE IF NOT EXISTS alerts (
+            {id_col},
+            camera_id       TEXT NOT NULL DEFAULT 'cam_01',
+            timestamp       TEXT NOT NULL,
+            alert_type      TEXT NOT NULL,
+            message         TEXT NOT NULL,
+            engagement_rate REAL NOT NULL DEFAULT 0,
+            viewer_count    INTEGER NOT NULL DEFAULT 0
         )
     """)
 
@@ -282,6 +345,24 @@ def open_db():
             except sqlite3.OperationalError:
                 pass
 
+        # Emotion columns (added in emotion detection phase)
+        emotion_cols = [
+            ("dominant_emotion",     "TEXT NOT NULL DEFAULT 'neutral'"),
+            ("emotion_happy_pct",    "REAL NOT NULL DEFAULT 0"),
+            ("emotion_neutral_pct",  "REAL NOT NULL DEFAULT 0"),
+            ("emotion_surprise_pct", "REAL NOT NULL DEFAULT 0"),
+            ("emotion_negative_pct", "REAL NOT NULL DEFAULT 0"),
+            ("engagement_quality",   "REAL NOT NULL DEFAULT 0"),
+            ("new_visitors",         "INTEGER NOT NULL DEFAULT 0"),
+        ]
+        for col, col_type in emotion_cols:
+            try:
+                conn.execute(f"ALTER TABLE analytics ADD COLUMN {col} {col_type}")
+            except sqlite3.OperationalError:
+                pass  # already exists
+
+        # alerts table is always created fresh above; no migration needed
+
     conn.commit()
     return conn
 
@@ -298,8 +379,22 @@ def get_age_group(age: int) -> str:
     elif age <= 60: return "middle_aged"
     else:           return "senior"
 
-def get_ad_category(age_group: str, gender: str) -> str:
+def get_ad_category(age_group: str, gender: str, emotion: str = "neutral") -> str:
+    """
+    Map audience demographics + emotion to an ad category.
+
+    When a face shows a strongly negative emotion (anger, disgust, contempt),
+    we override the standard age+gender ad with a calmer, wellness-oriented ad.
+    This prevents showing aggressive sales ads to an already-frustrated audience
+    which would worsen brand perception.
+
+    Positive emotions (happiness, surprise) → show the standard targeted ad.
+    Neutral → standard targeted ad.
+    Negative → switch to calming/wellness category for that age group.
+    """
     g = "M" if gender.lower() == "male" else "F"
+
+    # Standard age × gender mapping
     ad_map = {
         ("child",       "M"): "Toys / Boys Games",
         ("child",       "F"): "Toys / Girls Games",
@@ -312,6 +407,19 @@ def get_ad_category(age_group: str, gender: str) -> str:
         ("senior",      "M"): "Healthcare / Insurance",
         ("senior",      "F"): "Healthcare / Insurance",
     }
+
+    # Emotion-based override — strong negative emotion → calmer ad
+    # Only for anger/disgust/contempt (not sadness/fear which may still respond to ads)
+    negative_override = {
+        "child":       "Toys / Boys Games",       # keep playful regardless
+        "youth":       "Lifestyle / Travel",      # aspirational, uplifting
+        "adult":       "Health / Home Appliances",# practical, calming
+        "middle_aged": "Skincare / Wellness",     # wellness-focused
+        "senior":      "Healthcare / Insurance",  # unchanged
+    }
+    if emotion in {"anger", "disgust", "contempt"}:
+        return negative_override.get(age_group, "General Ad")
+
     return ad_map.get((age_group, g), "General Ad")
 
 
@@ -321,6 +429,37 @@ def get_ad_category(age_group: str, gender: str) -> str:
 # ONNX Runtime compiles the model graph. Subsequent runs are faster.
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _get_onnx_providers():
+    """
+    Return the ONNX Runtime execution provider list based on USE_GPU and
+    what is actually available on this machine.
+
+    ONNX Runtime execution providers are backends that can run ONNX models:
+      - CUDAExecutionProvider   → runs ops on an NVIDIA GPU via CUDA
+      - TensorrtExecutionProvider → extra layer on top of CUDA (faster for some nets)
+      - CPUExecutionProvider    → runs on CPU (always available, always last)
+
+    ONNX RT tries each provider left-to-right and falls back automatically,
+    so listing CUDA before CPU means "use GPU if possible, else CPU".
+    We still check get_available_providers() so we never request a provider
+    that isn't installed — that would cause a runtime error.
+    """
+    import onnxruntime as ort
+    available = ort.get_available_providers()
+
+    if USE_GPU and "CUDAExecutionProvider" in available:
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        print("[GPU] CUDA execution provider found — InsightFace will run on GPU.")
+    else:
+        providers = ["CPUExecutionProvider"]
+        if USE_GPU:
+            print("[GPU] CUDA not available — falling back to CPU.")
+            print("      To enable GPU: install onnxruntime-gpu and CUDA toolkit.")
+        else:
+            print("[GPU] USE_GPU=False — running InsightFace on CPU.")
+    return providers
+
+
 def load_insightface_model():
     try:
         from insightface.app import FaceAnalysis
@@ -329,9 +468,13 @@ def load_insightface_model():
         print("  Run:  pip install insightface onnxruntime\n")
         sys.exit(1)
 
+    providers = _get_onnx_providers()
     print("[*] Loading InsightFace model — this takes a few seconds on first run ...")
-    app = FaceAnalysis(name=MODEL_PACK, providers=["CPUExecutionProvider"])
+    app = FaceAnalysis(name=MODEL_PACK, providers=providers)
 
+    # ctx_id: device index passed to InsightFace.
+    #   0  → first GPU (or CPU when only CPUExecutionProvider is active)
+    #  -1  → force CPU (legacy InsightFace flag, not needed when providers list is explicit)
     # det_size: the resolution InsightFace internally resizes the frame to.
     # 640×640 is the best balance between speed and accuracy for a webcam feed.
     app.prepare(ctx_id=0, det_size=(640, 640))
@@ -363,6 +506,53 @@ result_buffer = deque(maxlen=SMOOTH_WINDOW)
 
 last_save_time  = 0.0     # epoch seconds — when we last wrote a DB row
 last_saved_data = {}      # prevents writing duplicate rows back-to-back
+
+# ── Unique visitor tracking ───────────────────────────────────────────────────
+# InsightFace's buffalo_l model produces a 512-dim ArcFace embedding per face.
+# These embeddings are already L2-normalised (normed_embedding), so cosine
+# similarity between two vectors is simply their dot product.
+# We keep a rolling list of "seen" embeddings and expire them after
+# VISITOR_EXPIRE_SECONDS of absence. If a new face's similarity to any stored
+# embedding exceeds VISITOR_SIMILARITY_THRESHOLD it is the same person.
+_seen_faces:             list  = []   # [{"emb": np.ndarray, "last_seen": float}]
+unique_visitors_session: int   = 0    # cumulative count since startup
+_uv_lock = threading.Lock()
+
+
+def _check_visitor(embedding) -> bool:
+    """
+    Returns True if this embedding belongs to a new visitor.
+    Side-effects:
+      - Removes entries not seen for VISITOR_EXPIRE_SECONDS.
+      - Updates last_seen for known visitors.
+      - Appends new embeddings and increments unique_visitors_session.
+    Thread-safe via _uv_lock.
+    """
+    global unique_visitors_session
+    if embedding is None:
+        return False
+
+    emb = np.asarray(embedding, dtype=np.float32)
+    now = time.time()
+
+    with _uv_lock:
+        # 1. Expire stale entries
+        _seen_faces[:] = [
+            f for f in _seen_faces
+            if now - f["last_seen"] < VISITOR_EXPIRE_SECONDS
+        ]
+
+        # 2. Compare against known embeddings (dot product = cosine sim for unit vecs)
+        for entry in _seen_faces:
+            sim = float(np.dot(emb, entry["emb"]))
+            if sim >= VISITOR_SIMILARITY_THRESHOLD:
+                entry["last_seen"] = now   # refresh expiry timer
+                return False               # known visitor
+
+        # 3. Genuinely new face
+        _seen_faces.append({"emb": emb, "last_seen": now})
+        unique_visitors_session += 1
+        return True
 
 # ── Dwell time tracking (population-level, no individual tracking) ────────────
 # We track "sessions" — contiguous periods where at least one person is present.
@@ -414,12 +604,22 @@ def run_inference_thread(app, frame: np.ndarray):
         gender    = "Male" if gender_id == 1 else "Female"
         det_score = float(face.det_score)
         age_grp   = get_age_group(age)
-        ad_cat    = get_ad_category(age_grp, gender)
 
-        # Real gaze detection using head pose estimation.
+        # ── Emotion detection ─────────────────────────────────────────────────
+        # Crop the face region from the frame and run the ONNX emotion model.
+        # The crop is processed in-memory and immediately discarded — never saved.
+        x1, y1, x2, y2 = face.bbox.astype(int)
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(frame.shape[1], x2), min(frame.shape[0], y2)
+        face_crop = frame[y1:y2, x1:x2]
+        emotion, emotion_scores = analyze_emotion(face_crop)
+
+        # Emotion influences ad selection: negative emotion → calmer ad override
+        ad_cat = get_ad_category(age_grp, gender, emotion)
+
+        # ── Gaze detection ────────────────────────────────────────────────────
         # is_looking_at_screen() runs solvePnP on InsightFace's 3D landmarks
         # to compute yaw (left/right) and pitch (up/down) angles.
-        # If |yaw| < YAW_THRESH and |pitch| < PITCH_THRESH → looking at screen.
         # Falls back to det_score proxy if 3D landmarks are unavailable.
         looking, gaze_yaw, gaze_pitch = is_looking_at_screen(
             face, frame.shape,
@@ -428,16 +628,31 @@ def run_inference_thread(app, frame: np.ndarray):
             det_fallback=ENGAGEMENT_THRESH,
         )
 
+        # Engagement quality = looking × emotion weight
+        # A face that is looking AND happy scores higher than one just looking.
+        quality = emotion_quality_weight(emotion) if looking else 0.0
+
+        # ── Unique visitor check ──────────────────────────────────────────────
+        # normed_embedding is InsightFace's ArcFace vector — 512 floats, unit length.
+        # We pass it to _check_visitor which compares cosine similarity with all
+        # faces seen recently. True = first time we've seen this face.
+        emb = getattr(face, "normed_embedding", None)
+        is_new = _check_visitor(emb)
+
         face_results.append({
-            "bbox":        face.bbox.astype(int).tolist(),
-            "age":         age,
-            "age_group":   age_grp,
-            "gender":      gender,
-            "det_score":   det_score,
-            "looking":     looking,
-            "gaze_yaw":    gaze_yaw,    # degrees, None if fallback was used
-            "gaze_pitch":  gaze_pitch,  # degrees, None if fallback was used
-            "ad_category": ad_cat,
+            "bbox":           face.bbox.astype(int).tolist(),
+            "age":            age,
+            "age_group":      age_grp,
+            "gender":         gender,
+            "det_score":      det_score,
+            "looking":        looking,
+            "gaze_yaw":       gaze_yaw,
+            "gaze_pitch":     gaze_pitch,
+            "ad_category":    ad_cat,
+            "emotion":        emotion,
+            "emotion_scores": emotion_scores,
+            "quality":        quality,
+            "is_new_visitor": is_new,
         })
 
     with state_lock:
@@ -445,8 +660,10 @@ def run_inference_thread(app, frame: np.ndarray):
         inference_busy = False
         inference_ms   = elapsed_ms
 
+    emotions = [f["emotion"] for f in face_results]
     print(f"[InsightFace] {len(face_results)} faces | {elapsed_ms:.0f}ms | "
-          f"engaged: {sum(1 for f in face_results if f['looking'])}/{len(face_results)}")
+          f"engaged: {sum(1 for f in face_results if f['looking'])}/{len(face_results)} | "
+          f"emotions: {', '.join(emotions) if emotions else 'none'}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -485,6 +702,15 @@ def compute_summary(faces: list) -> dict:
             "dominant_age_group":   "unknown",
             "engagement_rate":      0.0,
             "dominant_ad":          "No audience",
+            "crowd_gender":         "mixed",
+            "age_confident":        False,
+            "dominant_emotion":     "neutral",
+            "emotion_happy_pct":    0.0,
+            "emotion_neutral_pct":  1.0,
+            "emotion_surprise_pct": 0.0,
+            "emotion_negative_pct": 0.0,
+            "engagement_quality":   0.0,
+            "new_visitors":         0,
         }
 
     males   = sum(1 for f in faces if f["gender"] == "Male")
@@ -494,9 +720,77 @@ def compute_summary(faces: list) -> dict:
     age_groups = [f["age_group"] for f in faces]
     age_counts = Counter(age_groups)
     dominant_age = age_counts.most_common(1)[0][0]
+    dominant_age_pct = age_counts[dominant_age] / total
 
-    ads = [f["ad_category"] for f in faces]
-    dominant_ad = Counter(ads).most_common(1)[0][0]
+    # Apply age confidence threshold — only use age-targeted ad if one group is clearly dominant
+    age_confident = dominant_age_pct >= AGE_CONFIDENCE_THRESHOLD
+
+    # ── Crowd-level ad selection with gender confidence threshold ────────────
+    # Instead of picking the most common per-face ad, we look at the crowd
+    # as a whole and only commit to a gendered ad if one gender is clearly
+    # dominant (≥ GENDER_CONFIDENCE_THRESHOLD).
+    #
+    # Example — 10 people: 6 male, 4 female → 60% male → gendered ad (Cars/Finance)
+    # Example — 10 people: 5 male, 5 female → 50% each → mixed crowd → neutral ad
+    # Example —  2 people: 1 male, 1 female → 50% each → neutral ad
+    male_pct_now  = males / total
+    female_pct_now = females / total
+
+    if male_pct_now >= GENDER_CONFIDENCE_THRESHOLD:
+        crowd_gender = "Male"
+    elif female_pct_now >= GENDER_CONFIDENCE_THRESHOLD:
+        crowd_gender = "Female"
+    else:
+        crowd_gender = "mixed"   # no clear majority
+
+    # For mixed crowds, pick an age-appropriate neutral ad (no gender bias)
+    MIXED_CROWD_AD = {
+        "child":       "Toys / Boys Games",       # kids regardless of gender mix
+        "youth":       "Gaming / Sports",          # broad youth appeal
+        "adult":       "Lifestyle / Travel",       # universally appealing
+        "middle_aged": "Health / Home Appliances", # practical for everyone
+        "senior":      "Healthcare / Insurance",   # age-driven, not gender-driven
+    }
+
+    # Fallback ad when age group is not confident — broad appeal regardless of age
+    MIXED_AGE_AD = "Lifestyle / Travel"   # universally appealing across all age groups
+
+    if crowd_gender == "mixed" and not age_confident:
+        # Neither gender nor age is clear → fully general ad
+        dominant_ad = "General Ad"
+    elif crowd_gender == "mixed":
+        # Age is clear but gender is mixed → age-appropriate neutral ad
+        dominant_ad = MIXED_CROWD_AD.get(dominant_age, "General Ad")
+    elif not age_confident:
+        # Gender is clear but age is mixed → gender-appropriate broad ad
+        dominant_ad = "Lifestyle / Travel" if crowd_gender == "Female" else "Gaming / Sports"
+    else:
+        # Both gender and age are confident → fully targeted ad
+        dominant_ad = get_ad_category(dominant_age, crowd_gender, dominant_emotion)
+
+    # ── Emotion aggregation ───────────────────────────────────────────────────
+    emotions = [f.get("emotion", "neutral") for f in faces]
+    dominant_emotion = Counter(emotions).most_common(1)[0][0]
+
+    # Average probability of each emotion group across all faces
+    def avg_emotion_group(labels):
+        vals = []
+        for f in faces:
+            scores = f.get("emotion_scores", {})
+            vals.append(sum(scores.get(l, 0.0) for l in labels))
+        return round(sum(vals) / len(vals), 3) if vals else 0.0
+
+    emotion_happy_pct    = avg_emotion_group(["happiness"])
+    emotion_neutral_pct  = avg_emotion_group(["neutral"])
+    emotion_surprise_pct = avg_emotion_group(["surprise"])
+    emotion_negative_pct = avg_emotion_group(["anger", "disgust", "fear", "contempt", "sadness"])
+
+    # Engagement quality = (looking count / total) × avg emotion weight
+    # Caps at 1.0. A fully happy, fully engaged audience scores 1.0 * 1.5 → capped to 1.0.
+    # A neutral, fully engaged audience scores 1.0 * 1.0 = 1.0.
+    # A looking but angry audience scores 1.0 * 0.3 = 0.3.
+    avg_quality = sum(f.get("quality", 0.0) for f in faces) / total
+    engagement_quality = round(min(1.0, avg_quality), 3)
 
     return {
         "viewer_count":         total,
@@ -512,6 +806,15 @@ def compute_summary(faces: list) -> dict:
         "dominant_age_group":   dominant_age,
         "engagement_rate":      round(looking / total, 3),
         "dominant_ad":          dominant_ad,
+        "crowd_gender":         crowd_gender,     # "Male" / "Female" / "mixed"
+        "age_confident":        age_confident,    # True if dominant age ≥ threshold
+        "dominant_emotion":     dominant_emotion,
+        "emotion_happy_pct":    emotion_happy_pct,
+        "emotion_neutral_pct":  emotion_neutral_pct,
+        "emotion_surprise_pct": emotion_surprise_pct,
+        "emotion_negative_pct": emotion_negative_pct,
+        "engagement_quality":   engagement_quality,
+        "new_visitors":         sum(1 for f in faces if f.get("is_new_visitor")),
     }
 
 
@@ -551,7 +854,19 @@ def maybe_save_to_db(conn: sqlite3.Connection):
         "age_senior_pct":       round(sum(r["age_senior_pct"]      for r in result_buffer) / len(result_buffer), 3),
         "dominant_age_group":   Counter(r["dominant_age_group"] for r in result_buffer).most_common(1)[0][0],
         "engagement_rate":      round(sum(r["engagement_rate"] for r in result_buffer) / len(result_buffer), 3),
-        "dominant_ad":          Counter(r["dominant_ad"] for r in result_buffer).most_common(1)[0][0],
+        "dominant_ad":          Counter(r["dominant_ad"]     for r in result_buffer).most_common(1)[0][0],
+        "crowd_gender":         Counter(r["crowd_gender"]    for r in result_buffer).most_common(1)[0][0],
+        "age_confident":        sum(1 for r in result_buffer if r["age_confident"]) > len(result_buffer) // 2,
+        "dominant_emotion":     Counter(r["dominant_emotion"] for r in result_buffer).most_common(1)[0][0],
+        "emotion_happy_pct":    round(sum(r["emotion_happy_pct"]    for r in result_buffer) / len(result_buffer), 3),
+        "emotion_neutral_pct":  round(sum(r["emotion_neutral_pct"]  for r in result_buffer) / len(result_buffer), 3),
+        "emotion_surprise_pct": round(sum(r["emotion_surprise_pct"] for r in result_buffer) / len(result_buffer), 3),
+        "emotion_negative_pct": round(sum(r["emotion_negative_pct"] for r in result_buffer) / len(result_buffer), 3),
+        "engagement_quality":   round(sum(r["engagement_quality"]   for r in result_buffer) / len(result_buffer), 3),
+        # new_visitors is a count not a rate — sum across the buffer window, not average
+        "new_visitors":         sum(r["new_visitors"] for r in result_buffer),
+        # session total lives in memory, not in the buffer — expose it for the API
+        "unique_visitors_session": unique_visitors_session,
     }
 
     # Skip if identical to last save (nothing changed)
@@ -569,13 +884,18 @@ def maybe_save_to_db(conn: sqlite3.Connection):
                 male_pct, female_pct,
                 age_child_pct, age_youth_pct, age_adult_pct,
                 age_middle_aged_pct, age_senior_pct,
-                dominant_age_group, engagement_rate, dominant_ad
+                dominant_age_group, engagement_rate, dominant_ad,
+                dominant_emotion, emotion_happy_pct, emotion_neutral_pct,
+                emotion_surprise_pct, emotion_negative_pct, engagement_quality,
+                new_visitors
             ) VALUES (
                 ?, ?, ?, ?, ?,
                 ?, ?,
                 ?, ?, ?,
                 ?, ?,
-                ?, ?, ?
+                ?, ?, ?,
+                ?, ?, ?, ?, ?, ?,
+                ?
             )
         """, (
             CAMERA_ID, ts,
@@ -584,6 +904,9 @@ def maybe_save_to_db(conn: sqlite3.Connection):
             smoothed["age_child_pct"], smoothed["age_youth_pct"], smoothed["age_adult_pct"],
             smoothed["age_middle_aged_pct"], smoothed["age_senior_pct"],
             smoothed["dominant_age_group"], smoothed["engagement_rate"], smoothed["dominant_ad"],
+            smoothed["dominant_emotion"], smoothed["emotion_happy_pct"], smoothed["emotion_neutral_pct"],
+            smoothed["emotion_surprise_pct"], smoothed["emotion_negative_pct"], smoothed["engagement_quality"],
+            smoothed["new_visitors"],
         ))
         conn.commit()
 
@@ -592,6 +915,20 @@ def maybe_save_to_db(conn: sqlite3.Connection):
     print(f"[DB] Saved row @ {ts} — viewers={smoothed['viewer_count']} "
           f"engagement={smoothed['engagement_rate']:.0%} "
           f"dominant_ad={smoothed['dominant_ad']!r}")
+
+    # Push update to all connected WebSocket clients
+    _schedule_broadcast({
+        **smoothed,
+        "camera_id": CAMERA_ID,
+        "timestamp": ts,
+        "unique_visitors_session": unique_visitors_session,
+    })
+
+    # Fire Slack/webhook alert if engagement is low
+    _fire_webhook(smoothed)
+
+    # Log alert to DB for the Alerts tab
+    _log_alert(conn, smoothed["engagement_rate"], smoothed["viewer_count"], ts)
 
     # Update dwell session tracking based on the viewer count we just saved
     _update_dwell(conn, smoothed["viewer_count"])
@@ -689,6 +1026,86 @@ def _update_dwell(conn: sqlite3.Connection, viewer_count: int):
 
 # Pydantic models define exactly what JSON shape each endpoint returns.
 # FastAPI validates the data against these models before sending.
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 7.7 — WEBSOCKET BROADCAST, WEBHOOK ALERTS, ALERT LOGGING
+#
+# WebSocket broadcast:
+#   The camera loop (sync thread) calls _schedule_broadcast() after each DB
+#   save. It uses asyncio.run_coroutine_threadsafe() to schedule _broadcast_ws()
+#   on uvicorn's event loop — the only safe way to run async code from a
+#   non-async thread without blocking the camera loop.
+#
+# Webhook alerts:
+#   When engagement drops below WEBHOOK_ENGAGEMENT_THRESHOLD, we POST a JSON
+#   payload to WEBHOOK_URL. Works with Slack Incoming Webhooks, n8n, Zapier.
+#   WEBHOOK_COOLDOWN_SECONDS prevents alert spam.
+#
+# Alert logging:
+#   The same low-engagement events are also written to the `alerts` DB table
+#   so the dashboard can display a historical alert log.
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _broadcast_ws(data: dict):
+    """Send `data` as JSON to all connected WebSocket clients. Remove dead connections."""
+    dead = set()
+    for client in ws_clients.copy():
+        try:
+            await client.send_json(data)
+        except Exception:
+            dead.add(client)
+    ws_clients.difference_update(dead)
+
+
+def _schedule_broadcast(data: dict):
+    """
+    Thread-safe bridge: schedule an async WebSocket broadcast from the sync camera thread.
+    Uses run_coroutine_threadsafe so we never block the camera loop waiting for async I/O.
+    """
+    if _api_loop and ws_clients:
+        asyncio.run_coroutine_threadsafe(_broadcast_ws(data), _api_loop)
+
+
+def _fire_webhook(smoothed: dict):
+    """POST a JSON alert to WEBHOOK_URL when engagement drops below threshold."""
+    global _last_webhook_ts
+    if not WEBHOOK_URL:
+        return
+    now  = time.time()
+    rate = smoothed["engagement_rate"]
+    if rate < WEBHOOK_ENGAGEMENT_THRESHOLD and now - _last_webhook_ts > WEBHOOK_COOLDOWN_SECONDS:
+        _last_webhook_ts = now
+        try:
+            import requests  # optional dep — only imported when webhook fires
+            payload = {
+                "text": (f"⚠️ *Low Engagement Alert* — {CAMERA_ID}\n"
+                         f"Engagement: *{rate:.0%}* (threshold: {WEBHOOK_ENGAGEMENT_THRESHOLD:.0%})\n"
+                         f"Viewers: {smoothed['viewer_count']} | Ad: {smoothed['dominant_ad']}"),
+            }
+            requests.post(WEBHOOK_URL, json=payload, timeout=5)
+            print(f"[Webhook] Alert fired: engagement={rate:.0%}")
+        except Exception as e:
+            print(f"[Webhook] Failed to send: {e}")
+
+
+def _log_alert(conn, rate: float, viewer_count: int, ts: str):
+    """Write a low-engagement alert row to the alerts table (max once per minute)."""
+    global _last_alert_ts
+    now = time.time()
+    if rate < WEBHOOK_ENGAGEMENT_THRESHOLD and now - _last_alert_ts > WEBHOOK_COOLDOWN_SECONDS:
+        _last_alert_ts = now
+        with db_lock:
+            conn.execute(
+                """INSERT INTO alerts
+                   (camera_id, timestamp, alert_type, message, engagement_rate, viewer_count)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (CAMERA_ID, ts, "low_engagement",
+                 f"Engagement dropped to {rate:.0%} on {CAMERA_ID}",
+                 rate, viewer_count),
+            )
+            conn.commit()
+        print(f"[Alert] Logged low_engagement {rate:.0%}")
+
+
 class AnalyticsRow(BaseModel):
     id:                  int
     camera_id:           str
@@ -706,6 +1123,16 @@ class AnalyticsRow(BaseModel):
     dominant_age_group:  str
     engagement_rate:     float
     dominant_ad:         str
+    crowd_gender:            str   = "mixed"
+    age_confident:           bool  = False
+    dominant_emotion:        str   = "neutral"
+    emotion_happy_pct:       float = 0.0
+    emotion_neutral_pct:     float = 0.0
+    emotion_surprise_pct:    float = 0.0
+    emotion_negative_pct:    float = 0.0
+    engagement_quality:      float = 0.0
+    new_visitors:            int   = 0
+    unique_visitors_session: int   = 0   # cumulative since startup (not stored in DB)
 
 class SummaryResponse(BaseModel):
     row_count:              int
@@ -724,6 +1151,15 @@ class DwellSession(BaseModel):
     duration_seconds: float
     peak_count:       int
     avg_count:        float
+
+class AlertRow(BaseModel):
+    id:              int
+    camera_id:       str
+    timestamp:       str
+    alert_type:      str
+    message:         str
+    engagement_rate: float
+    viewer_count:    int
 
 class HealthResponse(BaseModel):
     status:   str
@@ -746,9 +1182,41 @@ def create_api(conn: sqlite3.Connection) -> FastAPI:
     api.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_methods=["GET"],
+        allow_methods=["GET", "POST"],
         allow_headers=["*"],
     )
+
+    # ── API key middleware ────────────────────────────────────────────────────
+    # When API_KEY is set, every HTTP request must include the header:
+    #   X-API-Key: <your key>
+    # WebSocket connections are exempt (auth happens at the protocol level).
+    # If API_KEY is empty the middleware is a no-op.
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request as StarletteRequest
+
+    class _APIKeyMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: StarletteRequest, call_next):
+            if API_KEY and not request.url.path.startswith("/ws/"):
+                key = request.headers.get("x-api-key", "")
+                if key != API_KEY:
+                    from starlette.responses import JSONResponse
+                    return JSONResponse(
+                        {"detail": "Invalid or missing X-API-Key header"},
+                        status_code=403,
+                    )
+            return await call_next(request)
+
+    if API_KEY:
+        api.add_middleware(_APIKeyMiddleware)
+
+    # ── Startup: capture the asyncio event loop ───────────────────────────────
+    # Uvicorn runs an asyncio event loop internally. We capture a reference to
+    # it here so that the sync camera thread can use run_coroutine_threadsafe()
+    # to schedule WebSocket broadcasts without blocking the camera loop.
+    @api.on_event("startup")
+    async def _on_startup():
+        global _api_loop
+        _api_loop = asyncio.get_event_loop()
 
     # ── GET /api/v1/health ───────────────────────────────────────────────────
     # Dashboard calls this to confirm the server is alive before loading.
@@ -780,33 +1248,44 @@ def create_api(conn: sqlite3.Connection) -> FastAPI:
         if row is None:
             raise HTTPException(status_code=404, detail="No analytics data yet. "
                                 "The system is collecting its first window — wait 10 seconds.")
-        return dict(row)
+        data = dict(row)
+        # Inject in-memory session total (not stored in DB — resets on restart)
+        data["unique_visitors_session"] = unique_visitors_session
+        return data
 
     # ── GET /api/v1/analytics/history ────────────────────────────────────────
     # Returns the last `limit` rows in chronological order (oldest first).
     # Optional: ?camera_id=cam_01 to filter by a specific camera.
     @api.get("/api/v1/analytics/history", response_model=List[AnalyticsRow])
-    def analytics_history(limit: int = Query(default=30, ge=1, le=1000),
-                          camera_id: Optional[str] = Query(default=None)):
+    def analytics_history(limit: int = Query(default=30, ge=1, le=5000),
+                          camera_id: Optional[str] = Query(default=None),
+                          date: Optional[str] = Query(default=None,
+                              description="Filter by date YYYY-MM-DD (e.g. 2026-04-26)")):
+        """
+        Returns rows in chronological order (oldest first).
+        `date` filters to a specific day — useful for historical analytics views.
+        """
+        conditions = []
+        params: list = []
+        if camera_id:
+            conditions.append("camera_id = ?")
+            params.append(camera_id)
+        if date:
+            # timestamps stored as "2026-04-26T12:00:00Z" — LIKE prefix matches the day
+            conditions.append("timestamp LIKE ?")
+            params.append(f"{date}%")
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
         with db_lock:
-            if camera_id:
-                rows = conn.execute(
-                    """
-                    SELECT * FROM (
-                        SELECT * FROM analytics WHERE camera_id = ? ORDER BY id DESC LIMIT ?
-                    ) ORDER BY id ASC
-                    """,
-                    (camera_id, limit)
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    """
-                    SELECT * FROM (
-                        SELECT * FROM analytics ORDER BY id DESC LIMIT ?
-                    ) ORDER BY id ASC
-                    """,
-                    (limit,)
-                ).fetchall()
+            rows = conn.execute(
+                f"""
+                SELECT * FROM (
+                    SELECT * FROM analytics {where} ORDER BY id DESC LIMIT ?
+                ) ORDER BY id ASC
+                """,
+                (*params, limit)
+            ).fetchall()
         return [dict(r) for r in rows]
 
     # ── GET /api/v1/analytics/summary ────────────────────────────────────────
@@ -874,6 +1353,113 @@ def create_api(conn: sqlite3.Connection) -> FastAPI:
                 ).fetchall()
         return [dict(r) for r in rows]
 
+    # ── GET /api/v1/cameras ──────────────────────────────────────────────────
+    # Returns a list of all camera_ids that have written data to the DB.
+    # The dashboard uses this to populate the camera switcher dropdown.
+    @api.get("/api/v1/cameras")
+    def list_cameras():
+        with db_lock:
+            rows = conn.execute(
+                "SELECT DISTINCT camera_id FROM analytics ORDER BY camera_id ASC"
+            ).fetchall()
+        return [r["camera_id"] for r in rows]
+
+    # ── GET /api/v1/alerts ───────────────────────────────────────────────────
+    # Returns the last `limit` alert events (low engagement, etc.) in time order.
+    @api.get("/api/v1/alerts", response_model=List[AlertRow])
+    def get_alerts(limit: int = Query(default=20, ge=1, le=200),
+                   camera_id: Optional[str] = Query(default=None)):
+        with db_lock:
+            if camera_id:
+                rows = conn.execute(
+                    """SELECT * FROM (
+                        SELECT * FROM alerts WHERE camera_id = ? ORDER BY id DESC LIMIT ?
+                    ) ORDER BY id ASC""",
+                    (camera_id, limit)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT * FROM (
+                        SELECT * FROM alerts ORDER BY id DESC LIMIT ?
+                    ) ORDER BY id ASC""",
+                    (limit,)
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ── GET /api/v1/export ───────────────────────────────────────────────────
+    # Streams analytics data as a downloadable CSV file.
+    # Optional query params: ?date=2026-04-26  and  ?camera_id=cam_01
+    #
+    # How StreamingResponse works:
+    #   Instead of building the entire response in memory and sending it,
+    #   StreamingResponse pipes data as it is generated. For a small SQLite DB
+    #   this doesn't matter much, but it is the correct pattern for large exports.
+    @api.get("/api/v1/export")
+    def export_csv(date: Optional[str] = Query(default=None),
+                   camera_id: Optional[str] = Query(default=None)):
+        conditions: list = []
+        params: list = []
+        if camera_id:
+            conditions.append("camera_id = ?")
+            params.append(camera_id)
+        if date:
+            conditions.append("timestamp LIKE ?")
+            params.append(f"{date}%")
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        with db_lock:
+            rows = conn.execute(
+                f"SELECT * FROM analytics {where} ORDER BY timestamp ASC",
+                tuple(params)
+            ).fetchall()
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+
+        headers = [
+            "id", "camera_id", "timestamp", "viewer_count",
+            "male_count", "female_count", "male_pct", "female_pct",
+            "age_child_pct", "age_youth_pct", "age_adult_pct",
+            "age_middle_aged_pct", "age_senior_pct",
+            "dominant_age_group", "engagement_rate", "dominant_ad",
+        ]
+        writer.writerow(headers)
+        for row in rows:
+            d = dict(row)
+            writer.writerow([d.get(h, "") for h in headers])
+
+        buf.seek(0)
+        fname = f"audience_{date or 'all'}_{camera_id or 'all'}.csv"
+        return StreamingResponse(
+            io.BytesIO(buf.read().encode("utf-8")),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={fname}"},
+        )
+
+    # ── WebSocket /ws/live ───────────────────────────────────────────────────
+    # Clients connect here to receive real-time pushes every time a new DB row
+    # is saved (every SAVE_EVERY_SECONDS). The payload has the same shape as
+    # GET /api/v1/analytics/live so the dashboard can use either interchangeably.
+    #
+    # Why WebSocket over polling?
+    #   Polling requires the client to ask "any new data?" every N seconds.
+    #   With WebSocket the server pushes the moment data is ready — zero lag,
+    #   fewer requests, no wasted network round-trips when nothing has changed.
+    @api.websocket("/ws/live")
+    async def websocket_live(websocket: WebSocket):
+        await websocket.accept()
+        ws_clients.add(websocket)
+        try:
+            while True:
+                # Keep connection alive. We don't expect messages from the client
+                # but receive_text() will raise WebSocketDisconnect when they leave.
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            ws_clients.discard(websocket)
+        except Exception:
+            ws_clients.discard(websocket)
+
     return api
 
 
@@ -934,7 +1520,8 @@ def draw_overlay(frame: np.ndarray, faces: list, fps: float, inf_ms: float, inf_
         else:
             pose_str = f" conf:{face['det_score']:.2f}"
 
-        label = f"{face['gender']} {face['age']} | {face['age_group']}{pose_str}"
+        emotion_str = face.get("emotion", "")
+        label = f"{face['gender']} {face['age']} | {face['age_group']} | {emotion_str}{pose_str}"
         engaged_label = " [LOOKING]" if face["looking"] else " [AWAY]"
         cv2.putText(out, label + engaged_label,
                     (x1, max(y1 - 6, 14)),
@@ -1066,6 +1653,9 @@ def main():
 
     # 1. Load InsightFace
     app = load_insightface_model()
+
+    # 1b. Load emotion model (downloads ~33 MB on first run, then cached)
+    load_emotion_model()
 
     # 2. Open database
     conn = open_db()

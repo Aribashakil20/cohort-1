@@ -21,10 +21,13 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { fetchHealth, fetchLive, fetchHistory, fetchSummary, fetchDwell } from "./api";
-import { usePolling } from "./hooks/usePolling";
+import { fetchHealth, fetchLive, fetchHistory, fetchSummary, fetchDwell,
+         fetchCameras, fetchAlerts, exportUrl, WS_BASE } from "./api";
+import { usePolling }    from "./hooks/usePolling";
+import { useWebSocket }  from "./hooks/useWebSocket";
 
 import StatusBar        from "./components/StatusBar";
+import TabBar           from "./components/TabBar";
 import StatCard         from "./components/StatCard";
 import GenderBar        from "./components/GenderBar";
 import AgeChart         from "./components/AgeChart";
@@ -32,6 +35,11 @@ import HistoryChart     from "./components/HistoryChart";
 import EngagementGauge  from "./components/EngagementGauge";
 import AdRecommendation from "./components/AdRecommendation";
 import DwellChart       from "./components/DwellChart";
+import EmotionChart     from "./components/EmotionChart";
+import AnalyticsPage    from "./components/AnalyticsPage";
+import AdPerformancePage from "./components/AdPerformancePage";
+import SettingsPage      from "./components/SettingsPage";
+import AlertsPanel       from "./components/AlertsPanel";
 
 // ── Demo data ─────────────────────────────────────────────────────────────────
 // Realistic fake data used when demoMode = true.
@@ -48,6 +56,16 @@ const DEMO_LIVE = {
   dominant_age_group: "adult",
   engagement_rate: 0.667,
   dominant_ad: "Cars / Finance",
+  crowd_gender: "Male",
+  age_confident: true,
+  dominant_emotion:        "happiness",
+  emotion_happy_pct:       0.50,
+  emotion_neutral_pct:     0.30,
+  emotion_surprise_pct:    0.10,
+  emotion_negative_pct:    0.10,
+  engagement_quality:      0.82,
+  new_visitors:            1,
+  unique_visitors_session: 12,
 };
 
 const DEMO_SUMMARY = {
@@ -57,16 +75,34 @@ const DEMO_SUMMARY = {
   avg_male_pct: 0.58, avg_female_pct: 0.42,
   dominant_age_group: "adult",
   dominant_ad: "Cars / Finance",
+  dominant_emotion:     "happiness",
+  avg_emotion_happy_pct:    0.45,
+  avg_emotion_neutral_pct:  0.35,
+  avg_emotion_surprise_pct: 0.10,
+  avg_emotion_negative_pct: 0.10,
+  avg_engagement_quality:   0.78,
 };
 
 // Generate 40 history points with slight random variation
-const DEMO_HISTORY = Array.from({ length: 40 }, (_, i) => ({
-  id: i + 1,
-  camera_id: "cam_01",
-  timestamp: new Date(Date.now() - (29 - i) * 10_000).toISOString(),
-  viewer_count: Math.max(0, Math.round(2.5 + Math.sin(i / 4) * 1.5 + (Math.random() - 0.5))),
-  engagement_rate: Math.min(1, Math.max(0, 0.55 + Math.cos(i / 5) * 0.2 + (Math.random() - 0.5) * 0.1)),
-}));
+const _EMOTIONS = ["happiness", "happiness", "neutral", "surprise", "neutral", "happiness"];
+const DEMO_HISTORY = Array.from({ length: 40 }, (_, i) => {
+  const engRate = Math.min(1, Math.max(0, 0.55 + Math.cos(i / 5) * 0.2 + (Math.random() - 0.5) * 0.1));
+  const happyPct = Math.min(1, Math.max(0, 0.40 + Math.sin(i / 4) * 0.15 + (Math.random() - 0.5) * 0.1));
+  const qualScore = Math.min(1, engRate * (0.8 + happyPct * 0.7));
+  return {
+    id: i + 1,
+    camera_id: "cam_01",
+    timestamp: new Date(Date.now() - (39 - i) * 10_000).toISOString(),
+    viewer_count:        Math.max(0, Math.round(2.5 + Math.sin(i / 4) * 1.5 + (Math.random() - 0.5))),
+    engagement_rate:     engRate,
+    dominant_emotion:    _EMOTIONS[i % _EMOTIONS.length],
+    emotion_happy_pct:   happyPct,
+    emotion_neutral_pct: Math.max(0, 0.35 - happyPct * 0.3),
+    emotion_surprise_pct: Math.max(0, 0.10 + (Math.random() - 0.5) * 0.05),
+    emotion_negative_pct: Math.max(0, 0.10 + (Math.random() - 0.5) * 0.05),
+    engagement_quality:  qualScore,
+  };
+});
 
 const DEMO_DWELL = [
   { id: 1, camera_id: "cam_01", start_time: "", end_time: "", duration_seconds: 47.3, peak_count: 3, avg_count: 2.1 },
@@ -80,9 +116,44 @@ const DEMO_DWELL = [
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [connected,  setConnected]  = useState(false);
-  const [lastUpdate, setLastUpdate] = useState(null);
-  const [demoMode,   setDemoMode]   = useState(false);
+  const [connected,      setConnected]      = useState(false);
+  const [lastUpdate,     setLastUpdate]     = useState(null);
+  const [demoMode,       setDemoMode]       = useState(false);
+  const [activeTab,      setActiveTab]      = useState("live");
+  const [screenName,     setScreenName]     = useState(
+    () => localStorage.getItem("screenName") || "Screen 1"
+  );
+  const [pollInterval,   setPollInterval]   = useState(5_000);
+  const [activeCameraId, setActiveCameraId] = useState(null); // null = all cameras
+  const [cameras,        setCameras]        = useState([]);   // list from /api/v1/cameras
+  const [alerts,         setAlerts]         = useState([]);
+
+  const handleScreenName = (name) => {
+    setScreenName(name);
+    localStorage.setItem("screenName", name);
+  };
+
+  // ── WebSocket real-time connection ───────────────────────────────────────
+  // Connects to /ws/live for instant push updates.
+  // Falls back to polling when disconnected.
+  const wsUrl = demoMode ? null : `${WS_BASE}/ws/live`;
+  const { data: wsLive, connected: wsConnected } = useWebSocket(wsUrl);
+
+  // ── Cameras list (fetched once) ──────────────────────────────────────────
+  useEffect(() => {
+    if (demoMode) return;
+    fetchCameras()
+      .then((list) => { if (list.length > 0) setCameras(list); })
+      .catch(() => {});
+  }, [demoMode]);
+
+  // ── Alerts polling (30s) ─────────────────────────────────────────────────
+  const alertsFn = useCallback(
+    () => demoMode ? Promise.resolve([]) : fetchAlerts(50, activeCameraId),
+    [demoMode, activeCameraId]
+  );
+  const { data: alertsData } = usePolling(alertsFn, 30_000);
+  useEffect(() => { if (alertsData) setAlerts(alertsData); }, [alertsData]);
 
   // ── Health check every 10s (skip in demo mode) ───────────────────────────
   useEffect(() => {
@@ -100,16 +171,31 @@ export default function App() {
     return () => clearInterval(t);
   }, [demoMode]);
 
-  // ── Live data polling (5s) ────────────────────────────────────────────────
-  const liveFn = useCallback(() => demoMode ? Promise.resolve(DEMO_LIVE)    : fetchLive(),       [demoMode]);
-  const histFn = useCallback(() => demoMode ? Promise.resolve(DEMO_HISTORY) : fetchHistory(40),  [demoMode]);
-  const sumFn  = useCallback(() => demoMode ? Promise.resolve(DEMO_SUMMARY) : fetchSummary(30),  [demoMode]);
-  const dwlFn  = useCallback(() => demoMode ? Promise.resolve(DEMO_DWELL)   : fetchDwell(20),    [demoMode]);
+  // ── Data polling — also used as fallback when WebSocket is disconnected ──
+  const liveFn = useCallback(
+    () => demoMode ? Promise.resolve(DEMO_LIVE)    : fetchLive(activeCameraId),
+    [demoMode, activeCameraId]
+  );
+  const histFn = useCallback(
+    () => demoMode ? Promise.resolve(DEMO_HISTORY) : fetchHistory(40, activeCameraId),
+    [demoMode, activeCameraId]
+  );
+  const sumFn  = useCallback(
+    () => demoMode ? Promise.resolve(DEMO_SUMMARY) : fetchSummary(30, activeCameraId),
+    [demoMode, activeCameraId]
+  );
+  const dwlFn  = useCallback(
+    () => demoMode ? Promise.resolve(DEMO_DWELL)   : fetchDwell(20, activeCameraId),
+    [demoMode, activeCameraId]
+  );
 
-  const { data: live    } = usePolling(liveFn, 5_000);
-  const { data: history } = usePolling(histFn, 5_000);
-  const { data: summary } = usePolling(sumFn,  10_000);
-  const { data: dwell   } = usePolling(dwlFn,  15_000);
+  const { data: polledLive } = usePolling(liveFn, pollInterval);
+  const { data: history    } = usePolling(histFn, pollInterval);
+  const { data: summary    } = usePolling(sumFn,  Math.max(pollInterval, 10_000));
+  const { data: dwell      } = usePolling(dwlFn,  Math.max(pollInterval, 15_000));
+
+  // Prefer WebSocket data for live (zero-lag), fall back to polling
+  const live = wsLive ?? polledLive;
 
   // Track last update time
   useEffect(() => {
@@ -127,8 +213,10 @@ export default function App() {
   const adCategory  = live?.dominant_ad        ?? "—";
   const cameraId    = live?.camera_id          ?? "—";
 
-  // Dominant gender label for ad recommendation reasoning
-  const dominantGender = (live?.male_pct ?? 0) >= (live?.female_pct ?? 0) ? "Male" : "Female";
+  // Crowd gender — "Male" / "Female" / "mixed" (from backend confidence threshold)
+  const crowdGender    = live?.crowd_gender  ?? "mixed";
+  const ageConfident   = live?.age_confident ?? false;
+  const dominantGender = crowdGender;
 
   // Previous window engagement rate — second-to-last row in history
   const prevRate = history && history.length >= 2
@@ -150,88 +238,124 @@ export default function App() {
     ? `${Math.round(dwell.reduce((s, d) => s + d.duration_seconds, 0) / dwell.length)}s`
     : "—";
 
+  // Emotion + mood quality
+  const dominantEmotion  = live?.dominant_emotion ?? "neutral";
+  const engagementQuality = live?.engagement_quality ?? 0;
+  const moodScore        = Math.round(engagementQuality * 100);
+  const moodIcon = moodScore >= 70 ? "😊" : moodScore >= 40 ? "😐" : "😟";
+
+  // Unique visitors
+  const uniqueVisitors = live?.unique_visitors_session ?? "—";
+
   return (
     <div className="min-h-screen bg-slate-900 text-white">
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
       <StatusBar
         connected={connected}
+        wsConnected={wsConnected}
         lastUpdate={lastUpdate}
-        cameraId={demoMode ? "cam_01 (demo)" : cameraId}
+        cameraId={demoMode ? "cam_01 (demo)" : (activeCameraId ?? cameraId)}
+        cameras={demoMode ? [] : cameras}
+        onCameraChange={setActiveCameraId}
+        screenName={screenName}
         demoMode={demoMode}
         onToggleDemo={() => setDemoMode(d => !d)}
       />
 
-      <div className="p-4 md:p-6 space-y-4">
+      {/* ── Tab navigation ──────────────────────────────────────────────── */}
+      <TabBar activeTab={activeTab} onTabChange={setActiveTab} alertCount={alerts.length} />
 
-        {/* ── Row 1: 5 summary stat cards ─────────────────────────────── */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          <StatCard
-            label="Viewers Now"
-            value={viewers}
-            icon="👥"
-            highlight="text-green-400"
-            sub="current snapshot"
-          />
-          <StatCard
-            label="Avg Viewers"
-            value={avgViewers}
-            icon="📊"
-            highlight="text-blue-400"
-            sub="last 30 windows"
-          />
-          <StatCard
-            label="Avg Engagement"
-            value={avgEngagement}
-            icon="🎯"
-            highlight="text-yellow-400"
-            sub="last 30 windows"
-          />
-          <StatCard
-            label="Dominant Age"
-            value={ageGroup}
-            icon="🎂"
-            highlight="text-purple-400"
-            sub="current audience"
-          />
-          <StatCard
-            label="Avg Dwell Time"
-            value={avgDwell}
-            icon="⏱️"
-            highlight="text-orange-400"
-            sub={`${dwell?.length ?? 0} sessions recorded`}
-          />
-          <StatCard
-            label="Impressions Today"
-            value={impressionsToday}
-            icon="👁️"
-            highlight="text-cyan-400"
-            sub="total viewers seen"
-          />
-        </div>
+      <div className="p-4 md:p-6">
 
-        {/* ── Row 2: Gender bar + Engagement gauge ────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-2">
-            <GenderBar
-              malePct={malePct}
-              femalePct={femalePct}
-              maleCount={maleCount}
-              femaleCount={femaleCount}
-            />
+        {/* ══════════════ LIVE VIEW TAB ══════════════ */}
+        {activeTab === "live" && (
+          <div className="space-y-4">
+
+            {/* Row 1: 8 summary stat cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+              <StatCard label="Viewers Now"       value={viewers}          icon="👥" highlight="text-green-400"  sub="current snapshot" />
+              <StatCard label="Avg Viewers"       value={avgViewers}       icon="📊" highlight="text-blue-400"   sub="last 30 windows" />
+              <StatCard label="Avg Engagement"    value={avgEngagement}    icon="🎯" highlight="text-yellow-400" sub="last 30 windows" />
+              <StatCard label="Dominant Age"      value={ageGroup}         icon="🎂" highlight="text-purple-400" sub="current audience" />
+              <StatCard label="Avg Dwell Time"    value={avgDwell}         icon="⏱️" highlight="text-orange-400" sub={`${dwell?.length ?? 0} sessions`} />
+              <StatCard label="Impressions Today" value={impressionsToday} icon="👁️" highlight="text-cyan-400"   sub="total viewers seen" />
+              <StatCard
+                label="Mood Score"
+                value={live ? moodScore : "—"}
+                icon={moodIcon}
+                highlight={moodScore >= 70 ? "text-green-400" : moodScore >= 40 ? "text-yellow-400" : "text-red-400"}
+                sub={live ? dominantEmotion : "no data"}
+              />
+              <StatCard
+                label="Unique Visitors"
+                value={uniqueVisitors}
+                icon="🪪"
+                highlight="text-indigo-400"
+                sub="since startup"
+              />
+            </div>
+
+            {/* Row 2: Gender bar + Engagement gauge + Emotion chart */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <GenderBar malePct={malePct} femalePct={femalePct} maleCount={maleCount} femaleCount={femaleCount} crowdGender={crowdGender} />
+              <EngagementGauge rate={engRate} prevRate={prevRate} />
+              <EmotionChart data={live} dominant={dominantEmotion} />
+            </div>
+
+            {/* Row 3: History line chart */}
+            <HistoryChart history={history} />
+
+            {/* Row 4: Age breakdown + Dwell chart + Ad recommendation */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <AgeChart data={live} />
+              <DwellChart sessions={dwell} />
+              <AdRecommendation
+                adCategory={adCategory}
+                ageGroup={ageGroup}
+                gender={dominantGender}
+                emotion={dominantEmotion}
+                qualityScore={moodScore}
+                crowdGender={crowdGender}
+                ageConfident={ageConfident}
+              />
+            </div>
+
           </div>
-          <EngagementGauge rate={engRate} prevRate={prevRate} />
-        </div>
+        )}
 
-        {/* ── Row 3: History line chart ────────────────────────────────── */}
-        <HistoryChart history={history} />
+        {/* ══════════════ TODAY'S ANALYTICS TAB ══════════════ */}
+        {activeTab === "analytics" && (
+          <AnalyticsPage
+            history={history}
+            summary={summary}
+            dwell={dwell}
+            cameraId={activeCameraId}
+            exportUrl={exportUrl}
+          />
+        )}
 
-        {/* ── Row 4: Age breakdown + Dwell chart + Ad recommendation ─── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <AgeChart data={live} />
-          <DwellChart sessions={dwell} />
-          <AdRecommendation adCategory={adCategory} ageGroup={ageGroup} gender={dominantGender} />
-        </div>
+        {/* ══════════════ AD PERFORMANCE TAB ══════════════ */}
+        {activeTab === "ads" && (
+          <AdPerformancePage history={history} />
+        )}
+
+        {/* ══════════════ ALERTS TAB ══════════════ */}
+        {activeTab === "alerts" && (
+          <AlertsPanel alerts={alerts} threshold={0.25} />
+        )}
+
+        {/* ══════════════ SETTINGS TAB ══════════════ */}
+        {activeTab === "settings" && (
+          <SettingsPage
+            screenName={screenName}
+            onScreenName={handleScreenName}
+            pollInterval={pollInterval}
+            onPollInterval={setPollInterval}
+            cameraId={activeCameraId ?? cameraId}
+            connected={connected}
+          />
+        )}
 
       </div>
     </div>

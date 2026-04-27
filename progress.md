@@ -3001,3 +3001,104 @@ Replace the `det_score` engagement proxy with L2CS-Net (a dedicated gaze estimat
 **Option C — Add RTSP camera support:**
 Change `cv2.VideoCapture(0)` to accept an RTSP URL so the system can work with IP cameras (not just a laptop webcam). This is a one-line change in `pipeline.py` but requires testing with a real IP camera.
 - Fast enough for the 15-second inference interval used in main.py
+
+---
+
+## Phase 12 — GPU Support + Unique Visitor Hashing + Crowd Confidence Thresholds (COMPLETE)
+
+### What was added
+
+#### 1. GPU Support (Auto-detect)
+- Added `USE_GPU = True` config flag in `pipeline.py`
+- Added `_get_onnx_providers()` function that checks `onnxruntime.get_available_providers()` at runtime
+- If NVIDIA GPU + `onnxruntime-gpu` installed → uses `CUDAExecutionProvider` (5–10× faster)
+- If not → silently falls back to `CPUExecutionProvider` (no crash, no manual change needed)
+- `utils/emotion_detection.py` already had GPU providers — no change needed there
+- To enable GPU: `pip uninstall onnxruntime && pip install onnxruntime-gpu`
+
+#### 2. Emotion Detection (FerPlus ONNX)
+- New file: `utils/emotion_detection.py`
+- Downloads EmotionFerPlus ONNX model (~33MB) on first run
+- Detects 8 emotions per face: happiness, surprise, neutral, sadness, anger, disgust, fear, contempt
+- Emotion influences ad selection — anger/disgust/contempt → calmer ad override
+- Mood Quality Score = engagement_rate × emotion_weight (happiness=1.5×, neutral=1.0×, anger=0.3×)
+- Dashboard: EmotionChart (stacked bar), Mood Score stat card, emotion badge in AdRecommendation
+
+#### 3. Unique Visitor Hashing
+- InsightFace buffalo_l already computes a 512-dim ArcFace `normed_embedding` per face
+- New function `_check_visitor(embedding)` compares cosine similarity (dot product of unit vectors) against all recently seen embeddings
+- `VISITOR_SIMILARITY_THRESHOLD = 0.50` — similarity ≥ this = same person
+- `VISITOR_EXPIRE_SECONDS = 300` — forget a face after 5 minutes of absence
+- `unique_visitors_session` counter increments only for genuinely new faces
+- Exposed via API (`unique_visitors_session` field) and WebSocket broadcast
+- Dashboard: "Unique Visitors" stat card (indigo, 🪪 icon)
+
+#### 4. Gender Confidence Threshold
+- `GENDER_CONFIDENCE_THRESHOLD = 0.60`
+- One gender must be ≥ 60% of the crowd to show a gender-targeted ad
+- Mixed crowd (e.g. 5M + 5F = 50/50) → neutral age-appropriate ad instead
+- Dashboard: GenderBar shows "Male majority" / "Female majority" / "Mixed crowd — neutral ad" badge
+
+#### 5. Age Confidence Threshold
+- `AGE_CONFIDENCE_THRESHOLD = 0.60`
+- Dominant age group must be ≥ 60% of crowd to drive an age-targeted ad
+- Mixed age crowd → falls back to broad-appeal ad
+- Full decision matrix:
+
+| Gender confident? | Age confident? | Ad shown |
+|---|---|---|
+| Yes | Yes | Fully targeted (e.g. Cars/Finance for adult male) |
+| Yes | No | Gender-broad (Lifestyle/Travel or Gaming/Sports) |
+| No | Yes | Age-appropriate neutral (no gender bias) |
+| No | No | General Ad |
+
+- Dashboard: AdRecommendation card shows "Mixed gender" and/or "Mixed age" badges when confidence is low
+
+#### 6. Backend/API additions
+- WebSocket `/ws/live` — real-time push to dashboard
+- CSV export `GET /api/v1/export?date=YYYY-MM-DD`
+- Webhook alerts (Slack/n8n) when engagement < 25%
+- API key auth (`X-API-Key` header middleware)
+- Multi-camera support (`/api/v1/cameras` endpoint)
+- Docker + docker-compose (pipeline on port 8000, dashboard on 5173)
+
+#### 7. Dashboard additions (React/Vite/Tailwind/Recharts)
+- 5 tabs: Live View, Today's Analytics, Ad Performance, Alerts, Settings
+- 8 stat cards: Viewers Now, Avg Viewers, Avg Engagement, Dominant Age, Avg Dwell, Impressions Today, Mood Score, Unique Visitors
+- Demo Mode — realistic fake data, no camera needed
+- Auto-reconnecting WebSocket hook with blue "Live" indicator
+- AlertsPanel with severity levels (Critical/High/Medium)
+- AdPerformancePage with A/B comparison mode
+- AnalyticsPage with date picker and CSV export button
+- SettingsPage with screen name, poll interval, read-only config
+
+---
+
+## Current Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Camera | OpenCV |
+| Face AI | InsightFace buffalo_l (ONNX) |
+| Emotion AI | FerPlus ONNX model (8 classes) |
+| Gaze | OpenCV solvePnP (head pose estimation) |
+| Unique visitors | ArcFace embeddings + cosine similarity |
+| Backend | Python + FastAPI + Uvicorn |
+| Database | SQLite (default) / PostgreSQL (optional) |
+| Realtime | WebSocket |
+| Dashboard | React + Vite + Tailwind CSS + Recharts |
+| Deployment | Docker + docker-compose |
+
+## Endpoints (8 REST + 1 WebSocket)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/analytics/live` | Current snapshot |
+| `GET /api/v1/analytics/history` | Last N rows for charts |
+| `GET /api/v1/analytics/summary` | Averages over time window |
+| `GET /api/v1/analytics/dwell` | Dwell session data |
+| `GET /api/v1/cameras` | List cameras with data |
+| `GET /api/v1/alerts` | Low engagement events |
+| `GET /api/v1/export` | Download CSV report |
+| `GET /api/v1/health` | Server health check |
+| `WS  /ws/live` | Real-time push stream |
