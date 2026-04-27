@@ -8,6 +8,7 @@ import {
   AreaChart, Area, LineChart, Line,
   ResponsiveContainer, Tooltip
 } from "recharts";
+import BrowserCamera from "./BrowserCamera";
 
 // ── Sparkline demo data ────────────────────────────────────────────────────────
 const mkSparkline = (base, amp, n = 24) =>
@@ -87,7 +88,8 @@ function Step({ n, title, desc }) {
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function LandingPage({ onEnterDashboard }) {
-  const [scrolled, setScrolled] = useState(false);
+  const [scrolled,    setScrolled]    = useState(false);
+  const [showCamera,  setShowCamera]  = useState(false);
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 20);
@@ -97,6 +99,11 @@ export default function LandingPage({ onEnterDashboard }) {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white font-sans">
+
+      {/* ── Browser Camera Overlay ──────────────────────────────────────────── */}
+      {showCamera && (
+        <BrowserCamera onClose={() => setShowCamera(false)} />
+      )}
 
       {/* ── Navbar ─────────────────────────────────────────────────────────── */}
       <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
@@ -159,17 +166,23 @@ export default function LandingPage({ onEnterDashboard }) {
           {/* CTAs */}
           <div className="flex items-center justify-center gap-4 flex-wrap">
             <button
-              onClick={onEnterDashboard}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-7 py-3 rounded-xl transition-colors text-sm"
+              onClick={() => setShowCamera(true)}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-7 py-3 rounded-xl transition-colors text-sm flex items-center gap-2"
             >
-              Try Live Demo →
+              <span>📷</span> Test with your camera
+            </button>
+            <button
+              onClick={onEnterDashboard}
+              className="text-slate-300 hover:text-white text-sm font-medium px-7 py-3 rounded-xl border border-slate-700 hover:border-slate-500 transition-colors"
+            >
+              Open Dashboard →
             </button>
             <a
               href="https://github.com/Aribashakil20/cohort-1"
               target="_blank" rel="noreferrer"
-              className="text-slate-300 hover:text-white text-sm font-medium px-7 py-3 rounded-xl border border-slate-700 hover:border-slate-500 transition-colors"
+              className="text-slate-400 hover:text-white text-sm px-4 py-3 transition-colors"
             >
-              View on GitHub
+              GitHub ↗
             </a>
           </div>
         </div>
@@ -309,15 +322,23 @@ export default function LandingPage({ onEnterDashboard }) {
         <div className="max-w-3xl mx-auto text-center bg-indigo-600/10 border border-indigo-500/20 rounded-3xl px-8 py-14">
           <h2 className="text-3xl font-bold mb-4">See it live</h2>
           <p className="text-slate-400 mb-8 max-w-md mx-auto text-sm leading-relaxed">
-            Open the dashboard in demo mode — no camera or setup required.
-            All charts, stat cards, and analytics working with realistic data.
+            Test right now with your device camera — no install, no signup.
+            The AI runs entirely in your browser.
           </p>
-          <button
-            onClick={onEnterDashboard}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-8 py-3 rounded-xl transition-colors"
-          >
-            Open Dashboard →
-          </button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button
+              onClick={() => setShowCamera(true)}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-8 py-3 rounded-xl transition-colors flex items-center gap-2"
+            >
+              <span>📷</span> Test with your camera
+            </button>
+            <button
+              onClick={onEnterDashboard}
+              className="text-slate-300 hover:text-white text-sm font-medium px-8 py-3 rounded-xl border border-slate-600 hover:border-slate-400 transition-colors"
+            >
+              Open Dashboard →
+            </button>
+          </div>
         </div>
       </section>
 
