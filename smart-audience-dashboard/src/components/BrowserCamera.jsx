@@ -193,9 +193,11 @@ export default function BrowserCamera({ onClose }) {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
-  const [phase,   setPhase]   = useState("loading"); // loading | ready | error
-  const [stats,   setStats]   = useState(null);
-  const [running, setRunning] = useState(false);
+  // phase: "loading" | "cam_permission" | "ready" | "model_error" | "cam_error"
+  const [phase,    setPhase]    = useState("loading");
+  const [camError, setCamError] = useState("");
+  const [stats,    setStats]    = useState(null);
+  const [running,  setRunning]  = useState(false);
 
   // ── Load models ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -207,38 +209,57 @@ export default function BrowserCamera({ onClose }) {
           faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
           faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
         ]);
-        setPhase("ready");
-      } catch {
-        setPhase("error");
+        setPhase("cam_permission");
+      } catch (err) {
+        console.error("Model load error:", err);
+        setPhase("model_error");
       }
     }
     loadModels();
   }, []);
 
   // ── Start camera ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (phase !== "ready") return;
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: 640, height: 480 }
-        });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.onloadedmetadata = () => setRunning(true);
-        }
-      } catch {
-        setPhase("error");
+  const startCamera = useCallback(async () => {
+    setCamError("");
+    setPhase("cam_permission");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          setPhase("ready");
+          setRunning(true);
+        };
       }
+    } catch (err) {
+      console.error("Camera error:", err.name, err.message);
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setCamError("permission");
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        setCamError("notfound");
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        setCamError("inuse");
+      } else {
+        setCamError("unknown");
+      }
+      setPhase("cam_error");
     }
-    startCamera();
+  }, []);
+
+  useEffect(() => {
+    if (phase === "cam_permission") {
+      startCamera();
+    }
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
       }
     };
-  }, [phase]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Inference loop ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -334,20 +355,63 @@ export default function BrowserCamera({ onClose }) {
             <div className="text-center">
               <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
               <div className="text-slate-400 text-sm">Loading AI models...</div>
-              <div className="text-slate-600 text-xs mt-1">~6MB download, cached after first use</div>
+              <div className="text-slate-600 text-xs mt-1">~6 MB · cached after first load</div>
             </div>
           )}
-          {phase === "error" && (
+          {phase === "cam_permission" && (
             <div className="text-center px-8">
+              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <div className="text-slate-300 text-sm font-semibold mb-1">Waiting for camera permission</div>
+              <div className="text-slate-500 text-xs">Click "Allow" when your browser asks</div>
+            </div>
+          )}
+          {phase === "model_error" && (
+            <div className="text-center px-8 max-w-xs">
+              <div className="text-4xl mb-3">⚠️</div>
+              <div className="text-white font-semibold mb-2">Could not load AI models</div>
+              <div className="text-slate-400 text-sm mb-4">Check your internet connection and try again.</div>
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-5 py-2 rounded-lg transition-colors"
+              >Reload page</button>
+            </div>
+          )}
+          {phase === "cam_error" && (
+            <div className="text-center px-8 max-w-xs">
               <div className="text-4xl mb-3">📷</div>
-              <div className="text-white font-semibold mb-2">Camera access denied</div>
-              <div className="text-slate-400 text-sm">Allow camera access in your browser and refresh.</div>
+              {camError === "permission" && <>
+                <div className="text-white font-semibold mb-2">Camera access blocked</div>
+                <div className="text-slate-400 text-sm mb-3">
+                  Your browser blocked the camera. To fix it:
+                </div>
+                <ol className="text-slate-400 text-xs text-left space-y-1.5 mb-4 list-decimal list-inside">
+                  <li>Click the <strong className="text-slate-300">camera icon</strong> in the address bar</li>
+                  <li>Select <strong className="text-slate-300">Always allow</strong></li>
+                  <li>Click the button below</li>
+                </ol>
+              </>}
+              {camError === "notfound" && <>
+                <div className="text-white font-semibold mb-2">No camera found</div>
+                <div className="text-slate-400 text-sm mb-4">No camera was detected on this device. Plug in a webcam and try again.</div>
+              </>}
+              {camError === "inuse" && <>
+                <div className="text-white font-semibold mb-2">Camera is in use</div>
+                <div className="text-slate-400 text-sm mb-4">Another app is using the camera. Close it (e.g. Zoom, Teams) and try again.</div>
+              </>}
+              {camError === "unknown" && <>
+                <div className="text-white font-semibold mb-2">Camera error</div>
+                <div className="text-slate-400 text-sm mb-4">Could not start the camera. Make sure this page is served over HTTPS and try again.</div>
+              </>}
+              <button
+                onClick={startCamera}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-5 py-2 rounded-lg transition-colors"
+              >Try again</button>
             </div>
           )}
           <video
             ref={videoRef}
             autoPlay playsInline muted
-            className={`w-full h-full object-cover ${phase !== "ready" && !running ? "hidden" : ""}`}
+            className={`w-full h-full object-cover ${running ? "" : "hidden"}`}
             style={{ transform: "scaleX(-1)" }}
           />
           <canvas
