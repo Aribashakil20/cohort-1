@@ -58,6 +58,7 @@ const DEMO_LIVE = {
   dominant_ad: "Cars / Finance",
   crowd_gender: "Male",
   age_confident: true,
+  avg_attention_score: 74,
   dominant_emotion:        "happiness",
   emotion_happy_pct:       0.50,
   emotion_neutral_pct:     0.30,
@@ -245,7 +246,13 @@ export default function App() {
   const moodIcon = moodScore >= 70 ? "😊" : moodScore >= 40 ? "😐" : "😟";
 
   // Unique visitors
-  const uniqueVisitors = live?.unique_visitors_session ?? "—";
+  const uniqueVisitors  = live?.unique_visitors_session ?? "—";
+
+  // Attention score
+  const attentionScore  = live?.avg_attention_score ?? null;
+  const attentionColor  = attentionScore >= 70 ? "text-green-400"
+                        : attentionScore >= 40 ? "text-yellow-400"
+                        : "text-red-400";
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
@@ -272,11 +279,18 @@ export default function App() {
         {activeTab === "live" && (
           <div className="space-y-4">
 
-            {/* Row 1: 8 summary stat cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+            {/* Row 1: 9 summary stat cards */}
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-3">
               <StatCard label="Viewers Now"       value={viewers}          icon="👥" highlight="text-green-400"  sub="current snapshot" />
               <StatCard label="Avg Viewers"       value={avgViewers}       icon="📊" highlight="text-blue-400"   sub="last 30 windows" />
               <StatCard label="Avg Engagement"    value={avgEngagement}    icon="🎯" highlight="text-yellow-400" sub="last 30 windows" />
+              <StatCard
+                label="Attention Score"
+                value={attentionScore != null ? attentionScore : "—"}
+                icon="🎯"
+                highlight={attentionColor}
+                sub="how intently watching"
+              />
               <StatCard label="Dominant Age"      value={ageGroup}         icon="🎂" highlight="text-purple-400" sub="current audience" />
               <StatCard label="Avg Dwell Time"    value={avgDwell}         icon="⏱️" highlight="text-orange-400" sub={`${dwell?.length ?? 0} sessions`} />
               <StatCard label="Impressions Today" value={impressionsToday} icon="👁️" highlight="text-cyan-400"   sub="total viewers seen" />

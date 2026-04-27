@@ -283,7 +283,8 @@ def open_db():
             emotion_surprise_pct REAL NOT NULL DEFAULT 0,
             emotion_negative_pct REAL NOT NULL DEFAULT 0,
             engagement_quality   REAL NOT NULL DEFAULT 0,
-            new_visitors         INTEGER NOT NULL DEFAULT 0
+            new_visitors         INTEGER NOT NULL DEFAULT 0,
+            avg_attention_score  INTEGER NOT NULL DEFAULT 0
         )
     """)
 
@@ -354,6 +355,7 @@ def open_db():
             ("emotion_negative_pct", "REAL NOT NULL DEFAULT 0"),
             ("engagement_quality",   "REAL NOT NULL DEFAULT 0"),
             ("new_visitors",         "INTEGER NOT NULL DEFAULT 0"),
+            ("avg_attention_score",  "INTEGER NOT NULL DEFAULT 0"),
         ]
         for col, col_type in emotion_cols:
             try:
@@ -371,6 +373,39 @@ def open_db():
 # SECTION 3 — AGE / GENDER HELPERS
 # Same logic as live_insightface.py, centralised here.
 # ══════════════════════════════════════════════════════════════════════════════
+
+def compute_attention_score(gaze_yaw, gaze_pitch, det_score,
+                            yaw_thresh=None, pitch_thresh=None) -> int:
+    """
+    Returns a 0–100 attention score for a single face.
+
+    Binary engagement (looking=True/False) treats someone glancing sideways
+    at 29° the same as someone staring dead-center at 0°. The attention score
+    makes this continuous.
+
+    Formula:
+      yaw_factor   = 1 - |yaw|   / YAW_THRESH    (1.0 = perfect center, 0.0 = at threshold)
+      pitch_factor = 1 - |pitch| / PITCH_THRESH   (same)
+      angle_score  = yaw_factor × pitch_factor     (both axes must be good)
+      attention    = angle_score × det_score × 100 (scaled by detection confidence)
+
+    Fallback (no 3D landmarks):
+      Uses det_score directly — high confidence face = likely looking at screen.
+    """
+    yt = yaw_thresh   or YAW_THRESH
+    pt = pitch_thresh or PITCH_THRESH
+
+    if gaze_yaw is None or gaze_pitch is None:
+        # No 3D landmarks — use detection confidence as proxy
+        score = (det_score - 0.5) / 0.5 if det_score >= 0.5 else 0.0
+    else:
+        yaw_factor   = max(0.0, 1.0 - abs(gaze_yaw)   / yt)
+        pitch_factor = max(0.0, 1.0 - abs(gaze_pitch) / pt)
+        angle_score  = yaw_factor * pitch_factor
+        score        = angle_score * min(1.0, det_score)
+
+    return round(score * 100)
+
 
 def get_age_group(age: int) -> str:
     if age <= 12:   return "child"
@@ -640,6 +675,10 @@ def run_inference_thread(app, frame: np.ndarray):
         # A face that is looking AND happy scores higher than one just looking.
         quality = emotion_quality_weight(emotion) if looking else 0.0
 
+        # Attention score — continuous 0–100 (replaces binary looking flag for scoring)
+        # Dead center + high confidence → 100. Slightly off → 70s. At threshold → 0.
+        attention = compute_attention_score(gaze_yaw, gaze_pitch, det_score)
+
         # ── Unique visitor check ──────────────────────────────────────────────
         # normed_embedding is InsightFace's ArcFace vector — 512 floats, unit length.
         # We pass it to _check_visitor which compares cosine similarity with all
@@ -660,6 +699,7 @@ def run_inference_thread(app, frame: np.ndarray):
             "emotion":        emotion,
             "emotion_scores": emotion_scores,
             "quality":        quality,
+            "attention":      attention,
             "is_new_visitor": is_new,
         })
 
@@ -719,6 +759,7 @@ def compute_summary(faces: list) -> dict:
             "emotion_negative_pct": 0.0,
             "engagement_quality":   0.0,
             "new_visitors":         0,
+            "avg_attention_score":  0,
         }
 
     males   = sum(1 for f in faces if f["gender"] == "Male")
@@ -821,6 +862,7 @@ def compute_summary(faces: list) -> dict:
         "emotion_negative_pct": emotion_negative_pct,
         "engagement_quality":   engagement_quality,
         "new_visitors":         sum(1 for f in faces if f.get("is_new_visitor")),
+        "avg_attention_score":  round(sum(f.get("attention", 0) for f in faces) / total),
     }
 
 
@@ -871,6 +913,7 @@ def maybe_save_to_db(conn: sqlite3.Connection):
         "engagement_quality":   round(sum(r["engagement_quality"]   for r in result_buffer) / len(result_buffer), 3),
         # new_visitors is a count not a rate — sum across the buffer window, not average
         "new_visitors":         sum(r["new_visitors"] for r in result_buffer),
+        "avg_attention_score":  round(sum(r["avg_attention_score"] for r in result_buffer) / len(result_buffer)),
         # session total lives in memory, not in the buffer — expose it for the API
         "unique_visitors_session": unique_visitors_session,
     }
@@ -893,7 +936,7 @@ def maybe_save_to_db(conn: sqlite3.Connection):
                 dominant_age_group, engagement_rate, dominant_ad,
                 dominant_emotion, emotion_happy_pct, emotion_neutral_pct,
                 emotion_surprise_pct, emotion_negative_pct, engagement_quality,
-                new_visitors
+                new_visitors, avg_attention_score
             ) VALUES (
                 ?, ?, ?, ?, ?,
                 ?, ?,
@@ -901,7 +944,7 @@ def maybe_save_to_db(conn: sqlite3.Connection):
                 ?, ?,
                 ?, ?, ?,
                 ?, ?, ?, ?, ?, ?,
-                ?
+                ?, ?
             )
         """, (
             CAMERA_ID, ts,
@@ -912,7 +955,7 @@ def maybe_save_to_db(conn: sqlite3.Connection):
             smoothed["dominant_age_group"], smoothed["engagement_rate"], smoothed["dominant_ad"],
             smoothed["dominant_emotion"], smoothed["emotion_happy_pct"], smoothed["emotion_neutral_pct"],
             smoothed["emotion_surprise_pct"], smoothed["emotion_negative_pct"], smoothed["engagement_quality"],
-            smoothed["new_visitors"],
+            smoothed["new_visitors"], smoothed["avg_attention_score"],
         ))
         conn.commit()
 
@@ -1138,6 +1181,7 @@ class AnalyticsRow(BaseModel):
     emotion_negative_pct:    float = 0.0
     engagement_quality:      float = 0.0
     new_visitors:            int   = 0
+    avg_attention_score:     int   = 0
     unique_visitors_session: int   = 0   # cumulative since startup (not stored in DB)
 
 class SummaryResponse(BaseModel):
