@@ -298,11 +298,18 @@ export default function BrowserCamera({ onClose }) {
         ctx.lineWidth   = 2;
         ctx.strokeRect(x, y, width, height);
 
-        // Label
+        // Label — canvas is CSS-flipped (scaleX -1), so counter-flip context
+        // to draw readable text at the correct visual position
         const label = `${gender} · ${Math.round(d.age)}y`;
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.translate(-canvas.width, 0);
         ctx.fillStyle = color;
         ctx.font      = "bold 13px sans-serif";
-        ctx.fillText(label, x, y > 16 ? y - 6 : y + 16);
+        // mirror x: visual left of box = canvas.width - x - width
+        const textX = canvas.width - x - width;
+        ctx.fillText(label, textX, y > 16 ? y - 6 : y + 16);
+        ctx.restore();
       });
 
       setStats(computeStats(detections));
@@ -346,10 +353,10 @@ export default function BrowserCamera({ onClose }) {
       </div>
 
       {/* Body */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
 
-        {/* Camera feed */}
-        <div className="flex-1 relative bg-black flex items-center justify-center">
+        {/* Camera feed — fixed height on mobile so stats don't push it off screen */}
+        <div className="relative bg-black flex items-center justify-center h-[42vh] md:h-auto md:flex-1 shrink-0">
           {phase === "loading" && (
             <div className="text-center">
               <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
@@ -425,28 +432,45 @@ export default function BrowserCamera({ onClose }) {
           )}
         </div>
 
-        {/* Stats panel */}
-        <div className="w-full md:w-80 bg-slate-900 border-t md:border-t-0 md:border-l border-slate-800 overflow-y-auto shrink-0">
+        {/* Stats panel — scrollable, 2-col grid on mobile, single col sidebar on desktop */}
+        <div className="w-full md:w-80 bg-slate-900 border-t md:border-t-0 md:border-l border-slate-800 overflow-y-auto shrink-0 flex-1 md:flex-none">
           {!stats ? (
-            <div className="flex items-center justify-center h-full text-slate-600 text-sm p-8 text-center">
+            <div className="flex items-center justify-center h-full min-h-[8rem] text-slate-600 text-sm p-6 text-center">
               {running ? "Looking for faces..." : "Starting camera..."}
             </div>
           ) : (
-            <div className="p-5 space-y-5">
+            <div className="p-4 md:p-5">
 
-              {/* Viewers */}
-              <div>
+              {/* ── Mobile: 2-column stat cards, then full-width sections ── */}
+              {/* Audience row */}
+              <div className="grid grid-cols-3 gap-2 mb-4 md:hidden">
+                <div className="bg-slate-800 rounded-xl p-3 text-center">
+                  <div className="text-green-400 font-bold text-xl">{stats.total}</div>
+                  <div className="text-slate-500 text-xs mt-0.5">Viewers</div>
+                </div>
+                <div className="bg-slate-800 rounded-xl p-3 text-center">
+                  <div className="text-purple-400 font-bold text-xl">{stats.avgAge}</div>
+                  <div className="text-slate-500 text-xs mt-0.5">Avg age</div>
+                </div>
+                <div className="bg-slate-800 rounded-xl p-3 text-center">
+                  <div className="text-indigo-400 font-bold text-sm leading-tight mt-0.5">{stats.dominantAge.replace("_", " ")}</div>
+                  <div className="text-slate-500 text-xs mt-0.5">Group</div>
+                </div>
+              </div>
+
+              {/* ── Desktop: row-style stat list ── */}
+              <div className="hidden md:block mb-5">
                 <div className="text-slate-500 text-xs uppercase tracking-widest mb-3">Audience</div>
                 <StatRow label="Viewers detected" value={stats.total} color="text-green-400" />
                 <StatRow label="Average age"      value={`${stats.avgAge} years`} color="text-purple-400" />
                 <StatRow label="Age group"        value={stats.dominantAge.replace("_", " ")} color="text-indigo-400" />
               </div>
 
-              {/* Gender */}
-              <div>
-                <div className="text-slate-500 text-xs uppercase tracking-widest mb-3">Gender Split</div>
+              {/* Gender — shown on all sizes */}
+              <div className="mb-4 md:mb-5">
+                <div className="text-slate-500 text-xs uppercase tracking-widest mb-2 md:mb-3">Gender Split</div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-slate-400 text-sm">Crowd gender</span>
+                  <span className="text-slate-400 text-xs md:text-sm">Crowd</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full border ${
                     stats.crowdGender === "male"
                       ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
@@ -454,16 +478,35 @@ export default function BrowserCamera({ onClose }) {
                       ? "bg-pink-500/20 text-pink-300 border-pink-500/30"
                       : "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
                   }`}>
-                    {stats.crowdGender === "mixed" ? "Mixed crowd" : `${stats.crowdGender} majority`}
+                    {stats.crowdGender === "mixed" ? "Mixed" : `${stats.crowdGender} majority`}
                   </span>
                 </div>
                 <GenderBar malePct={stats.malePct} femalePct={stats.femalePct} />
               </div>
 
-              {/* Emotion */}
+              {/* Ad Recommendation — prominent on all sizes */}
+              <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 md:p-4 mb-4 md:mb-5">
+                <div className="text-slate-400 text-xs uppercase tracking-widest mb-2">Recommended Ad</div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xl md:text-2xl">{AD_ICONS[stats.adCategory] || "📢"}</span>
+                  <span className="text-white font-bold text-sm">{stats.adCategory}</span>
+                </div>
+                <div className="text-slate-500 text-xs">
+                  {stats.total} {stats.total === 1 ? "person" : "people"} · {stats.dominantAge.replace("_", " ")} · {stats.crowdGender}
+                </div>
+                {["angry", "disgusted", "fearful"].includes(stats.dominantExpr) && (
+                  <div className="mt-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
+                    Mood override active
+                  </div>
+                )}
+              </div>
+
+              {/* Expressions */}
               <div>
-                <div className="text-slate-500 text-xs uppercase tracking-widest mb-3">Expressions</div>
-                <div className="space-y-2">
+                <div className="text-slate-500 text-xs uppercase tracking-widest mb-2 md:mb-3">
+                  Expressions <span className="text-slate-600 normal-case tracking-normal">· dominant: <span className="text-slate-400 capitalize">{EXPR_LABEL[stats.dominantExpr] || stats.dominantExpr}</span></span>
+                </div>
+                <div className="space-y-1.5">
                   {[
                     { key: "happy",     color: "#34d399" },
                     { key: "surprised", color: "#60a5fa" },
@@ -484,26 +527,6 @@ export default function BrowserCamera({ onClose }) {
                     );
                   })}
                 </div>
-                <div className="mt-2 text-xs text-slate-500">
-                  Dominant: <span className="text-slate-300 capitalize">{EXPR_LABEL[stats.dominantExpr] || stats.dominantExpr}</span>
-                </div>
-              </div>
-
-              {/* Ad Recommendation */}
-              <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-4">
-                <div className="text-slate-400 text-xs uppercase tracking-widest mb-3">Recommended Ad</div>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">{AD_ICONS[stats.adCategory] || "📢"}</span>
-                  <span className="text-white font-bold text-sm">{stats.adCategory}</span>
-                </div>
-                <div className="text-slate-500 text-xs">
-                  Based on {stats.total} {stats.total === 1 ? "person" : "people"} · {stats.dominantAge.replace("_", " ")} · {stats.crowdGender}
-                </div>
-                {["angry", "disgusted", "fearful"].includes(stats.dominantExpr) && (
-                  <div className="mt-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
-                    Mood override active
-                  </div>
-                )}
               </div>
 
             </div>
