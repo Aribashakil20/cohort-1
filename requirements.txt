@@ -1,8 +1,9 @@
-insightface
-onnxruntime
-opencv-python-headless
-fastapi
-uvicorn[standard]
-numpy
-requests
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
+opencv-python==4.13.0.92
+insightface==0.7.3
+onnxruntime==1.25.0
+numpy==2.4.4
+requests==2.33.1
+websockets==16.0
 psycopg2-binary

@@ -116,7 +116,7 @@ CAMERA_ID          = "cam_01"   # Unique name for this camera instance.
                                 # from different cameras never gets mixed up.
 
 MODEL_PACK         = "buffalo_l"  # InsightFace model; buffalo_s is faster but less accurate
-USE_GPU            = True       # Set False to force CPU even if CUDA is available
+USE_GPU            = False      # Set True if onnxruntime-gpu + CUDA toolkit are installed
 VISITOR_SIMILARITY_THRESHOLD = 0.50  # cosine similarity ≥ this → same person (0.0–1.0)
 VISITOR_EXPIRE_SECONDS       = 300   # forget a face after 5 min of absence
 GENDER_CONFIDENCE_THRESHOLD  = 0.60  # one gender must be ≥ this % of crowd to drive a gendered ad
@@ -600,8 +600,16 @@ def run_inference_thread(app, frame: np.ndarray):
     face_results = []
     for face in faces:
         age       = int(face.age)    if hasattr(face, "age")    and face.age    is not None else 30
-        gender_id = int(face.gender) if hasattr(face, "gender") and face.gender is not None else 0
-        gender    = "Male" if gender_id == 1 else "Female"
+        # InsightFace returns gender as a float (0.0 = female, 1.0 = male).
+        # int() truncates — int(0.7) = 0 = Female (WRONG).
+        # Use a confidence zone: >0.6 = Male, <0.4 = Female, 0.4–0.6 = uncertain.
+        raw_gender = float(face.gender) if hasattr(face, "gender") and face.gender is not None else 0.5
+        if raw_gender > 0.6:
+            gender = "Male"
+        elif raw_gender < 0.4:
+            gender = "Female"
+        else:
+            gender = "Unknown"   # low confidence — excluded from gender crowd stats
         det_score = float(face.det_score)
         age_grp   = get_age_group(age)
 
@@ -714,7 +722,9 @@ def compute_summary(faces: list) -> dict:
         }
 
     males   = sum(1 for f in faces if f["gender"] == "Male")
-    females = total - males
+    females = sum(1 for f in faces if f["gender"] == "Female")
+    # "Unknown" gender faces (low confidence 0.4–0.6) excluded from gender crowd stats
+    gender_known = males + females
     looking = sum(1 for f in faces if f["looking"])
 
     age_groups = [f["age_group"] for f in faces]
@@ -725,6 +735,25 @@ def compute_summary(faces: list) -> dict:
     # Apply age confidence threshold — only use age-targeted ad if one group is clearly dominant
     age_confident = dominant_age_pct >= AGE_CONFIDENCE_THRESHOLD
 
+    # ── Emotion aggregation (must be before ad selection — dominant_emotion is used below) ──
+    emotions = [f.get("emotion", "neutral") for f in faces]
+    dominant_emotion = Counter(emotions).most_common(1)[0][0]
+
+    def avg_emotion_group(labels):
+        vals = []
+        for f in faces:
+            scores = f.get("emotion_scores", {})
+            vals.append(sum(scores.get(l, 0.0) for l in labels))
+        return round(sum(vals) / len(vals), 3) if vals else 0.0
+
+    emotion_happy_pct    = avg_emotion_group(["happiness"])
+    emotion_neutral_pct  = avg_emotion_group(["neutral"])
+    emotion_surprise_pct = avg_emotion_group(["surprise"])
+    emotion_negative_pct = avg_emotion_group(["anger", "disgust", "fear", "contempt", "sadness"])
+
+    avg_quality = sum(f.get("quality", 0.0) for f in faces) / total
+    engagement_quality = round(min(1.0, avg_quality), 3)
+
     # ── Crowd-level ad selection with gender confidence threshold ────────────
     # Instead of picking the most common per-face ad, we look at the crowd
     # as a whole and only commit to a gendered ad if one gender is clearly
@@ -733,8 +762,8 @@ def compute_summary(faces: list) -> dict:
     # Example — 10 people: 6 male, 4 female → 60% male → gendered ad (Cars/Finance)
     # Example — 10 people: 5 male, 5 female → 50% each → mixed crowd → neutral ad
     # Example —  2 people: 1 male, 1 female → 50% each → neutral ad
-    male_pct_now  = males / total
-    female_pct_now = females / total
+    male_pct_now   = males   / gender_known if gender_known > 0 else 0.0
+    female_pct_now = females / gender_known if gender_known > 0 else 0.0
 
     if male_pct_now >= GENDER_CONFIDENCE_THRESHOLD:
         crowd_gender = "Male"
@@ -768,36 +797,13 @@ def compute_summary(faces: list) -> dict:
         # Both gender and age are confident → fully targeted ad
         dominant_ad = get_ad_category(dominant_age, crowd_gender, dominant_emotion)
 
-    # ── Emotion aggregation ───────────────────────────────────────────────────
-    emotions = [f.get("emotion", "neutral") for f in faces]
-    dominant_emotion = Counter(emotions).most_common(1)[0][0]
-
-    # Average probability of each emotion group across all faces
-    def avg_emotion_group(labels):
-        vals = []
-        for f in faces:
-            scores = f.get("emotion_scores", {})
-            vals.append(sum(scores.get(l, 0.0) for l in labels))
-        return round(sum(vals) / len(vals), 3) if vals else 0.0
-
-    emotion_happy_pct    = avg_emotion_group(["happiness"])
-    emotion_neutral_pct  = avg_emotion_group(["neutral"])
-    emotion_surprise_pct = avg_emotion_group(["surprise"])
-    emotion_negative_pct = avg_emotion_group(["anger", "disgust", "fear", "contempt", "sadness"])
-
-    # Engagement quality = (looking count / total) × avg emotion weight
-    # Caps at 1.0. A fully happy, fully engaged audience scores 1.0 * 1.5 → capped to 1.0.
-    # A neutral, fully engaged audience scores 1.0 * 1.0 = 1.0.
-    # A looking but angry audience scores 1.0 * 0.3 = 0.3.
-    avg_quality = sum(f.get("quality", 0.0) for f in faces) / total
-    engagement_quality = round(min(1.0, avg_quality), 3)
 
     return {
         "viewer_count":         total,
         "male_count":           males,
         "female_count":         females,
-        "male_pct":             round(males / total, 3),
-        "female_pct":           round(females / total, 3),
+        "male_pct":             round(males   / gender_known, 3) if gender_known > 0 else 0.0,
+        "female_pct":           round(females / gender_known, 3) if gender_known > 0 else 0.0,
         "age_child_pct":        round(age_counts.get("child",       0) / total, 3),
         "age_youth_pct":        round(age_counts.get("youth",       0) / total, 3),
         "age_adult_pct":        round(age_counts.get("adult",       0) / total, 3),
@@ -1171,10 +1177,19 @@ def create_api(conn: sqlite3.Connection) -> FastAPI:
     Build and return the FastAPI app.
     `conn` is the shared SQLite connection — the same one the camera loop writes to.
     """
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app):
+        global _api_loop
+        _api_loop = asyncio.get_event_loop()
+        yield
+
     api = FastAPI(
         title="Smart Audience Analysis API",
         description="Real-time audience analytics from camera + InsightFace",
         version="1.0.0",
+        lifespan=lifespan,
     )
 
     # CORS — allows any origin (*)
@@ -1210,14 +1225,6 @@ def create_api(conn: sqlite3.Connection) -> FastAPI:
         api.add_middleware(_APIKeyMiddleware)
 
     # ── Startup: capture the asyncio event loop ───────────────────────────────
-    # Uvicorn runs an asyncio event loop internally. We capture a reference to
-    # it here so that the sync camera thread can use run_coroutine_threadsafe()
-    # to schedule WebSocket broadcasts without blocking the camera loop.
-    @api.on_event("startup")
-    async def _on_startup():
-        global _api_loop
-        _api_loop = asyncio.get_event_loop()
-
     # ── GET /api/v1/health ───────────────────────────────────────────────────
     # Dashboard calls this to confirm the server is alive before loading.
     @api.get("/api/v1/health", response_model=HealthResponse)
