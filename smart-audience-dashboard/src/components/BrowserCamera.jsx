@@ -14,7 +14,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import * as faceapi from "face-api.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const MODEL_URL = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights";
+// Models are bundled in public/models — served as static files, no CDN dependency
+const MODEL_URL = "/models";
 const GENDER_THRESHOLD = 0.60;
 const AGE_THRESHOLD    = 0.60;
 
@@ -355,7 +356,7 @@ export default function BrowserCamera({ onClose }) {
             <div className="text-center">
               <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
               <div className="text-slate-400 text-sm">Loading AI models...</div>
-              <div className="text-slate-600 text-xs mt-1">~6 MB · cached after first load</div>
+              <div className="text-slate-600 text-xs mt-1">First time only — then instant</div>
             </div>
           )}
           {phase === "cam_permission" && (
