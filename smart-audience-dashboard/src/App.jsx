@@ -26,6 +26,7 @@ import { fetchHealth, fetchLive, fetchHistory, fetchSummary, fetchDwell,
 import { usePolling }    from "./hooks/usePolling";
 import { useWebSocket }  from "./hooks/useWebSocket";
 
+import LandingPage      from "./components/LandingPage";
 import StatusBar        from "./components/StatusBar";
 import TabBar           from "./components/TabBar";
 import StatCard         from "./components/StatCard";
@@ -117,6 +118,7 @@ const DEMO_DWELL = [
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const [showLanding,    setShowLanding]    = useState(true);
   const [connected,      setConnected]      = useState(false);
   const [lastUpdate,     setLastUpdate]     = useState(null);
   const [demoMode,       setDemoMode]       = useState(false);
@@ -254,10 +256,24 @@ export default function App() {
                         : attentionScore >= 40 ? "text-yellow-400"
                         : "text-red-400";
 
+  if (showLanding) {
+    return <LandingPage onEnterDashboard={() => setShowLanding(false)} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-white">
 
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
+      <div className="bg-slate-950 border-b border-slate-800 px-4 py-1.5 flex items-center gap-3">
+        <button
+          onClick={() => setShowLanding(true)}
+          className="text-slate-500 hover:text-white text-xs flex items-center gap-1 transition-colors"
+        >
+          ← SmartAudience
+        </button>
+        <span className="text-slate-700 text-xs">/</span>
+        <span className="text-slate-400 text-xs">Dashboard</span>
+      </div>
       <StatusBar
         connected={connected}
         wsConnected={wsConnected}
