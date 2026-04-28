@@ -12,14 +12,17 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as faceapi from "face-api.js";
+import { AD_LIBRARY, resolveAd } from "./adLibrary";
 
-// ── Constants ──────────────────────────────────────────────────────────────────
-// Models are bundled in public/models — served as static files, no CDN dependency
-const MODEL_URL = "/models";
+const MODEL_URL        = "/models";
 const GENDER_THRESHOLD = 0.60;
 const AGE_THRESHOLD    = 0.60;
 
-// ── Ad logic (mirrors pipeline.py) ────────────────────────────────────────────
+const EXPR_LABEL = {
+  happy: "Happy 😊", surprised: "Surprised 😮", neutral: "Neutral 😐",
+  sad: "Sad 😢", angry: "Angry 😠", disgusted: "Disgusted 🤢", fearful: "Fearful 😨",
+};
+
 function getAgeGroup(age) {
   if (age <= 12) return "child";
   if (age <= 24) return "youth";
@@ -28,127 +31,35 @@ function getAgeGroup(age) {
   return "senior";
 }
 
-const AD_MAP = {
-  "child-M":       "Toys / Boys Games",
-  "child-F":       "Toys / Girls Games",
-  "youth-M":       "Gaming / Sports",
-  "youth-F":       "Fashion / Beauty",
-  "adult-M":       "Cars / Finance",
-  "adult-F":       "Lifestyle / Travel",
-  "middle_aged-M": "Health / Home Appliances",
-  "middle_aged-F": "Skincare / Wellness",
-  "senior-M":      "Healthcare / Insurance",
-  "senior-F":      "Healthcare / Insurance",
-};
-
-const MIXED_AGE_AD = {
-  child: "Toys / Boys Games",
-  youth: "Gaming / Sports",
-  adult: "Lifestyle / Travel",
-  middle_aged: "Health / Home Appliances",
-  senior: "Healthcare / Insurance",
-};
-
-const NEGATIVE_OVERRIDE = {
-  child: "Toys / Boys Games",
-  youth: "Lifestyle / Travel",
-  adult: "Health / Home Appliances",
-  middle_aged: "Skincare / Wellness",
-  senior: "Healthcare / Insurance",
-};
-
-const AD_ICONS = {
-  "Toys / Boys Games":       "🚀",
-  "Toys / Girls Games":      "🎀",
-  "Gaming / Sports":         "🎮",
-  "Fashion / Beauty":        "👗",
-  "Cars / Finance":          "🚗",
-  "Lifestyle / Travel":      "✈️",
-  "Health / Home Appliances":"🏠",
-  "Skincare / Wellness":     "💆",
-  "Healthcare / Insurance":  "🏥",
-  "General Ad":              "📢",
-};
-
-function getAdCategory(ageGroup, gender, dominantExpr) {
-  const isNegative = ["angry", "disgusted", "fearful"].includes(dominantExpr);
-  if (isNegative) return NEGATIVE_OVERRIDE[ageGroup] || "General Ad";
-  const key = `${ageGroup}-${gender === "male" ? "M" : "F"}`;
-  return AD_MAP[key] || "General Ad";
-}
-
-// face-api uses different expression keys
-const EXPR_LABEL = {
-  happy:     "Happy 😊",
-  surprised: "Surprised 😮",
-  neutral:   "Neutral 😐",
-  sad:       "Sad 😢",
-  angry:     "Angry 😠",
-  disgusted: "Disgusted 🤢",
-  fearful:   "Fearful 😨",
-};
-
-// ── Compute crowd stats from face-api detections ──────────────────────────────
 function computeStats(detections) {
   const total = detections.length;
   if (total === 0) return null;
 
-  const males   = detections.filter(d => d.gender === "male"   && d.genderProbability > 0.6).length;
-  const females = detections.filter(d => d.gender === "female" && d.genderProbability > 0.6).length;
+  const males       = detections.filter(d => d.gender === "male"   && d.genderProbability > 0.6).length;
+  const females     = detections.filter(d => d.gender === "female" && d.genderProbability > 0.6).length;
   const genderKnown = males + females;
+  const malePct     = genderKnown > 0 ? males   / genderKnown : 0;
+  const femalePct   = genderKnown > 0 ? females / genderKnown : 0;
+  const crowdGender = malePct >= GENDER_THRESHOLD ? "male" : femalePct >= GENDER_THRESHOLD ? "female" : "mixed";
 
-  const malePct   = genderKnown > 0 ? males   / genderKnown : 0;
-  const femalePct = genderKnown > 0 ? females / genderKnown : 0;
-
-  const crowdGender =
-    malePct   >= GENDER_THRESHOLD ? "male"   :
-    femalePct >= GENDER_THRESHOLD ? "female" : "mixed";
-
-  // Age groups
   const ageCounts = {};
   detections.forEach(d => {
     const g = getAgeGroup(Math.round(d.age));
     ageCounts[g] = (ageCounts[g] || 0) + 1;
   });
-  const dominantAge    = Object.entries(ageCounts).sort((a,b) => b[1]-a[1])[0][0];
-  const dominantAgePct = ageCounts[dominantAge] / total;
-  const ageConfident   = dominantAgePct >= AGE_THRESHOLD;
+  const dominantAge  = Object.entries(ageCounts).sort((a,b) => b[1]-a[1])[0][0];
+  const ageConfident = ageCounts[dominantAge] / total >= AGE_THRESHOLD;
 
-  // Expressions
   const exprTotals = {};
   detections.forEach(d => {
-    Object.entries(d.expressions).forEach(([k, v]) => {
-      exprTotals[k] = (exprTotals[k] || 0) + v;
-    });
+    Object.entries(d.expressions).forEach(([k, v]) => { exprTotals[k] = (exprTotals[k] || 0) + v; });
   });
-  const dominantExpr = Object.entries(exprTotals)
-    .sort((a,b) => b[1]-a[1])[0][0];
+  const dominantExpr = Object.entries(exprTotals).sort((a,b) => b[1]-a[1])[0][0];
+  const avgAge = Math.round(detections.reduce((s, d) => s + d.age, 0) / total);
 
-  // Ad selection
-  let adCategory;
-  const isNegative = ["angry", "disgusted", "fearful"].includes(dominantExpr);
-  if (crowdGender === "mixed" && !ageConfident) {
-    adCategory = "General Ad";
-  } else if (crowdGender === "mixed") {
-    adCategory = isNegative
-      ? NEGATIVE_OVERRIDE[dominantAge]
-      : MIXED_AGE_AD[dominantAge] || "General Ad";
-  } else if (!ageConfident) {
-    adCategory = crowdGender === "female" ? "Lifestyle / Travel" : "Gaming / Sports";
-  } else {
-    adCategory = getAdCategory(dominantAge, crowdGender, dominantExpr);
-  }
+  const { key: adKey, ad, moodOverride } = resolveAd(crowdGender, dominantAge, ageConfident, dominantExpr);
 
-  const avgAge = Math.round(
-    detections.reduce((s, d) => s + d.age, 0) / total
-  );
-
-  return {
-    total, males, females, malePct, femalePct,
-    crowdGender, dominantAge, ageConfident,
-    dominantExpr, adCategory, avgAge,
-    exprTotals,
-  };
+  return { total, males, females, malePct, femalePct, crowdGender, dominantAge, ageConfident, dominantExpr, avgAge, exprTotals, adKey, ad, moodOverride };
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -194,11 +105,12 @@ export default function BrowserCamera({ onClose }) {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
-  // phase: "loading" | "cam_permission" | "ready" | "model_error" | "cam_error"
   const [phase,    setPhase]    = useState("loading");
   const [camError, setCamError] = useState("");
   const [stats,    setStats]    = useState(null);
   const [running,  setRunning]  = useState(false);
+  // adPerf: { [adKey]: { ad, totalViewers, males, females, frames } }
+  const [adPerf,   setAdPerf]   = useState({});
 
   // ── Start camera (also called by "Try again" button) ─────────────────────
   const startCamera = useCallback(async () => {
@@ -312,7 +224,23 @@ export default function BrowserCamera({ onClose }) {
         ctx.restore();
       });
 
-      setStats(computeStats(detections));
+      const s = computeStats(detections);
+      setStats(s);
+      if (s) {
+        setAdPerf(prev => {
+          const p = prev[s.adKey] || { ad: s.ad, totalViewers: 0, males: 0, females: 0, frames: 0 };
+          return {
+            ...prev,
+            [s.adKey]: {
+              ad: s.ad,
+              totalViewers: p.totalViewers + s.total,
+              males:        p.males        + s.males,
+              females:      p.females      + s.females,
+              frames:       p.frames       + 1,
+            },
+          };
+        });
+      }
 
       // Run every 800ms
       await new Promise(r => setTimeout(r, 800));
@@ -484,22 +412,61 @@ export default function BrowserCamera({ onClose }) {
                 <GenderBar malePct={stats.malePct} femalePct={stats.femalePct} />
               </div>
 
-              {/* Ad Recommendation — prominent on all sizes */}
-              <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-3 md:p-4 mb-4 md:mb-5">
-                <div className="text-slate-400 text-xs uppercase tracking-widest mb-2">Recommended Ad</div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xl md:text-2xl">{AD_ICONS[stats.adCategory] || "📢"}</span>
-                  <span className="text-white font-bold text-sm">{stats.adCategory}</span>
-                </div>
-                <div className="text-slate-500 text-xs">
-                  {stats.total} {stats.total === 1 ? "person" : "people"} · {stats.dominantAge.replace("_", " ")} · {stats.crowdGender}
-                </div>
-                {["angry", "disgusted", "fearful"].includes(stats.dominantExpr) && (
-                  <div className="mt-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded px-2 py-1">
-                    Mood override active
+              {/* Ad Recommendation — rich card */}
+              {stats.ad && (
+                <div className="rounded-xl p-3 md:p-4 mb-4 md:mb-5 border" style={{ background: `${stats.ad.color}12`, borderColor: `${stats.ad.color}30` }}>
+                  <div className="text-xs uppercase tracking-widest mb-2" style={{ color: stats.ad.color }}>Now Showing</div>
+                  <div className="flex items-start gap-3">
+                    <span className="text-3xl">{stats.ad.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-white font-bold text-sm">{stats.ad.brand}</div>
+                      <div className="text-slate-300 text-xs italic mt-0.5">"{stats.ad.headline}"</div>
+                      <div className="text-slate-500 text-xs mt-1">{stats.ad.description}</div>
+                    </div>
                   </div>
-                )}
-              </div>
+                  <div className="mt-3 pt-3 border-t border-slate-700/50 text-xs text-slate-400">
+                    Targeting <span className="text-slate-200 font-medium">{stats.ad.target}</span> · {stats.total} {stats.total === 1 ? "person" : "people"} in frame
+                  </div>
+                  {stats.moodOverride && (
+                    <div className="mt-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
+                      ⚡ Mood override — switched to wellness ad
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Ad Performance this session */}
+              {Object.keys(adPerf).length > 0 && (
+                <div className="mb-4 md:mb-5">
+                  <div className="text-slate-500 text-xs uppercase tracking-widest mb-3">Ad performance · this session</div>
+                  <div className="space-y-2">
+                    {Object.entries(adPerf)
+                      .sort((a, b) => b[1].totalViewers - a[1].totalViewers)
+                      .map(([key, p]) => {
+                        const avgV    = p.frames > 0 ? (p.totalViewers / p.frames).toFixed(1) : 0;
+                        const malePct = p.totalViewers > 0 ? Math.round((p.males / p.totalViewers) * 100) : 0;
+                        return (
+                          <div key={key} className="bg-slate-800 rounded-xl p-3">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="text-base">{p.ad.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-white text-xs font-semibold truncate">{p.ad.brand}</div>
+                                <div className="text-slate-500 text-xs">{p.ad.category}</div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="text-green-400 text-xs font-bold">{p.totalViewers} views</div>
+                                <div className="text-slate-500 text-xs">avg {avgV}/frame</div>
+                              </div>
+                            </div>
+                            <div className="text-slate-600 text-xs">
+                              {malePct}% male · {100 - malePct}% female · reached <span className="text-slate-400">{p.ad.reachDesc}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
 
               {/* Expressions */}
               <div>

@@ -12,20 +12,17 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import * as faceapi from "face-api.js";
 import {
-  AreaChart, Area, BarChart, Bar,
+  AreaChart, Area,
   XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
+import { AD_LIBRARY, resolveAd } from "./adLibrary";
 
-const MODEL_URL = "/models";
+const MODEL_URL    = "/models";
+const AGE_ORDER    = ["child", "youth", "adult", "middle_aged", "senior"];
+const AGE_COLORS   = { child: "#a78bfa", youth: "#60a5fa", adult: "#34d399", middle_aged: "#fb923c", senior: "#f87171" };
 const GENDER_THRESHOLD = 0.60;
 const AGE_THRESHOLD    = 0.60;
-const AGE_ORDER = ["child", "youth", "adult", "middle_aged", "senior"];
-const AGE_COLORS = {
-  child: "#a78bfa", youth: "#60a5fa", adult: "#34d399",
-  middle_aged: "#fb923c", senior: "#f87171",
-};
 
-// ── Ad logic ───────────────────────────────────────────────────────────────────
 function getAgeGroup(age) {
   if (age <= 12) return "child";
   if (age <= 24) return "youth";
@@ -33,40 +30,16 @@ function getAgeGroup(age) {
   if (age <= 60) return "middle_aged";
   return "senior";
 }
-const AD_MAP = {
-  "child-M": "Toys / Boys Games", "child-F": "Toys / Girls Games",
-  "youth-M": "Gaming / Sports",   "youth-F": "Fashion / Beauty",
-  "adult-M": "Cars / Finance",    "adult-F": "Lifestyle / Travel",
-  "middle_aged-M": "Health / Home Appliances", "middle_aged-F": "Skincare / Wellness",
-  "senior-M": "Healthcare / Insurance",        "senior-F": "Healthcare / Insurance",
-};
-const MIXED_AGE_AD = {
-  child: "Toys / Boys Games", youth: "Gaming / Sports",
-  adult: "Lifestyle / Travel", middle_aged: "Health / Home Appliances",
-  senior: "Healthcare / Insurance",
-};
-const NEGATIVE_OVERRIDE = {
-  child: "Toys / Boys Games", youth: "Lifestyle / Travel",
-  adult: "Health / Home Appliances", middle_aged: "Skincare / Wellness",
-  senior: "Healthcare / Insurance",
-};
-const AD_ICONS = {
-  "Toys / Boys Games": "🚀", "Toys / Girls Games": "🎀",
-  "Gaming / Sports": "🎮",   "Fashion / Beauty": "👗",
-  "Cars / Finance": "🚗",    "Lifestyle / Travel": "✈️",
-  "Health / Home Appliances": "🏠", "Skincare / Wellness": "💆",
-  "Healthcare / Insurance": "🏥",   "General Ad": "📢",
-};
 
 function computeStats(allDetections) {
   const total = allDetections.length;
   if (total === 0) return null;
 
-  const males     = allDetections.filter(d => d.gender === "male"   && d.genderProbability > 0.6).length;
-  const females   = allDetections.filter(d => d.gender === "female" && d.genderProbability > 0.6).length;
+  const males       = allDetections.filter(d => d.gender === "male"   && d.genderProbability > 0.6).length;
+  const females     = allDetections.filter(d => d.gender === "female" && d.genderProbability > 0.6).length;
   const genderKnown = males + females;
-  const malePct   = genderKnown > 0 ? males   / genderKnown : 0;
-  const femalePct = genderKnown > 0 ? females / genderKnown : 0;
+  const malePct     = genderKnown > 0 ? males   / genderKnown : 0;
+  const femalePct   = genderKnown > 0 ? females / genderKnown : 0;
   const crowdGender = malePct >= GENDER_THRESHOLD ? "male" : femalePct >= GENDER_THRESHOLD ? "female" : "mixed";
 
   const ageCounts = {};
@@ -79,27 +52,31 @@ function computeStats(allDetections) {
 
   const exprTotals = {};
   allDetections.forEach(d => {
-    Object.entries(d.expressions).forEach(([k, v]) => {
-      exprTotals[k] = (exprTotals[k] || 0) + v;
-    });
+    Object.entries(d.expressions).forEach(([k, v]) => { exprTotals[k] = (exprTotals[k] || 0) + v; });
   });
   const dominantExpr = Object.entries(exprTotals).sort((a,b) => b[1]-a[1])[0][0];
-  const isNegative   = ["angry", "disgusted", "fearful"].includes(dominantExpr);
+  const avgAge       = Math.round(allDetections.reduce((s, d) => s + d.age, 0) / total);
 
-  let adCategory;
-  if (crowdGender === "mixed" && !ageConfident) adCategory = "General Ad";
-  else if (crowdGender === "mixed") adCategory = isNegative ? NEGATIVE_OVERRIDE[dominantAge] : MIXED_AGE_AD[dominantAge] || "General Ad";
-  else if (!ageConfident) adCategory = crowdGender === "female" ? "Lifestyle / Travel" : "Gaming / Sports";
-  else {
-    const key = `${dominantAge}-${crowdGender === "male" ? "M" : "F"}`;
-    adCategory = isNegative ? NEGATIVE_OVERRIDE[dominantAge] : AD_MAP[key] || "General Ad";
-  }
-
-  const avgAge = Math.round(allDetections.reduce((s, d) => s + d.age, 0) / total);
-  return { total, males, females, malePct, femalePct, crowdGender, dominantAge, ageConfident, dominantExpr, adCategory, avgAge, exprTotals, ageCounts };
+  const { key: adKey, ad, moodOverride } = resolveAd(crowdGender, dominantAge, ageConfident, dominantExpr);
+  return { total, males, females, malePct, femalePct, crowdGender, dominantAge, ageConfident, dominantExpr, avgAge, exprTotals, ageCounts, adKey, ad, moodOverride };
 }
 
-// ── Process video frame-by-frame, return detections + timeline ────────────────
+// ── Compute per-ad performance from per-frame timeline ────────────────────────
+function computeAdPerf(frameTimeline) {
+  // frameTimeline: [{ t, count, males, females, adKey, ad }]
+  const perf = {};
+  frameTimeline.forEach(f => {
+    if (!f.adKey || f.count === 0) return;
+    if (!perf[f.adKey]) perf[f.adKey] = { ad: f.ad, totalViewers: 0, males: 0, females: 0, seconds: 0 };
+    perf[f.adKey].totalViewers += f.count;
+    perf[f.adKey].males        += f.males  || 0;
+    perf[f.adKey].females      += f.females || 0;
+    perf[f.adKey].seconds      += 1;
+  });
+  return perf;
+}
+
+// ── Process video frame-by-frame, return detections + rich timeline ───────────
 async function analyzeVideoElement(videoEl, onProgress) {
   const duration = isFinite(videoEl.duration) ? videoEl.duration : 0;
   if (duration === 0) return { detections: [], timeline: [] };
@@ -119,7 +96,22 @@ async function analyzeVideoElement(videoEl, onProgress) {
       .withFaceExpressions();
 
     allDetections.push(...dets);
-    timeline.push({ t: i, count: dets.length, label: `${i}s` });
+
+    // Per-frame demographics for ad attribution
+    const males   = dets.filter(d => d.gender === "male"   && d.genderProbability > 0.6).length;
+    const females = dets.filter(d => d.gender === "female" && d.genderProbability > 0.6).length;
+    const gK      = males + females;
+    const cg      = gK > 0 ? (males / gK >= 0.6 ? "male" : females / gK >= 0.6 ? "female" : "mixed") : "mixed";
+    const agCounts = {};
+    dets.forEach(d => { const g = getAgeGroup(Math.round(d.age)); agCounts[g] = (agCounts[g]||0)+1; });
+    const domAge = dets.length > 0 ? Object.entries(agCounts).sort((a,b)=>b[1]-a[1])[0][0] : "adult";
+    const ageC   = dets.length > 0 && agCounts[domAge] / dets.length >= 0.6;
+    const exprT  = {};
+    dets.forEach(d => Object.entries(d.expressions).forEach(([k,v]) => { exprT[k]=(exprT[k]||0)+v; }));
+    const domExpr = dets.length > 0 ? Object.entries(exprT).sort((a,b)=>b[1]-a[1])[0][0] : "neutral";
+    const { key: adKey, ad } = dets.length > 0 ? resolveAd(cg, domAge, ageC, domExpr) : { key: null, ad: null };
+
+    timeline.push({ t: i, count: dets.length, label: `${i}s`, males, females, adKey, ad });
     onProgress(Math.round(((i + 1) / (steps + 1)) * 100));
   }
   return { detections: allDetections, timeline };
@@ -157,8 +149,16 @@ function downloadSummary(rec) {
     "",
     "AD RECOMMENDATION",
     "-----------------",
-    `Recommended ad : ${s.adCategory}`,
+    `Recommended ad : ${s.ad?.brand || "General"}`,
+    `Tagline        : "${s.ad?.headline || ""}"`,
     `Reasoning      : ${s.dominantAge.replace("_"," ")} · ${s.crowdGender} crowd · mood: ${s.dominantExpr}`,
+    `Target         : ${s.ad?.target || "General audience"}`,
+    "",
+    "AD PERFORMANCE BY SEGMENT",
+    "-------------------------",
+    ...Object.entries(rec.adPerf || {})
+      .sort((a,b) => b[1].totalViewers - a[1].totalViewers)
+      .map(([k, p]) => `${p.ad.brand.padEnd(20)}: ${p.totalViewers} views · ${p.seconds}s on screen · ${Math.round((p.males/p.totalViewers)*100)||0}% male`),
     "",
     "──────────────────────────────────────────",
     "Generated by SmartAudience",
@@ -315,14 +315,15 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
       const { detections, timeline } = await analyzeVideoElement(video, setProgress);
       URL.revokeObjectURL(url);
 
-      const stats      = computeStats(detections);
+      const stats       = computeStats(detections);
+      const adPerf      = computeAdPerf(timeline);
       const peakViewers = timeline.length ? Math.max(...timeline.map(t => t.count)) : 0;
-      const recording  = {
+      const recording   = {
         id: Date.now(), index: recordingIndex,
         location:  location.trim() || "Unknown location",
         timestamp: new Date().toLocaleString(),
         duration:  Math.round(video.duration),
-        peakViewers, timeline, stats,
+        peakViewers, timeline, adPerf, stats,
       };
       setResult(recording);
       onRecordingComplete(recording);
@@ -491,17 +492,71 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
                 </div>
               </div>
 
-              {/* Ad recommendation */}
-              <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-4">
-                <div className="text-slate-400 text-xs uppercase tracking-widest mb-2">Recommended Ad</div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-2xl">{AD_ICONS[result.stats.adCategory] || "📢"}</span>
-                  <span className="text-white font-bold">{result.stats.adCategory}</span>
+              {/* Overall ad recommendation */}
+              {result.stats?.ad && (
+                <div className="rounded-xl p-4 border" style={{ background: `${result.stats.ad.color}12`, borderColor: `${result.stats.ad.color}30` }}>
+                  <div className="text-xs uppercase tracking-widest mb-2" style={{ color: result.stats.ad.color }}>Overall Ad Recommendation</div>
+                  <div className="flex items-start gap-3">
+                    <span className="text-3xl">{result.stats.ad.icon}</span>
+                    <div>
+                      <div className="text-white font-bold">{result.stats.ad.brand}</div>
+                      <div className="text-slate-300 text-xs italic mt-0.5">"{result.stats.ad.headline}"</div>
+                      <div className="text-slate-500 text-xs mt-1">{result.stats.ad.description}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-xs text-slate-400">
+                    Targeting <span className="text-slate-200 font-medium">{result.stats.ad.target}</span>
+                    {result.stats.moodOverride && <span className="ml-2 text-amber-400">⚡ mood override</span>}
+                  </div>
                 </div>
-                <div className="text-slate-500 text-xs">
-                  {result.stats.dominantAge.replace("_"," ")} · {result.stats.crowdGender} · mood: {result.stats.dominantExpr}
+              )}
+
+              {/* Per-ad performance breakdown */}
+              {result.adPerf && Object.keys(result.adPerf).length > 0 && (
+                <div>
+                  <div className="text-slate-500 text-xs uppercase tracking-widest mb-3">Ad performance · by audience segment</div>
+                  <div className="space-y-3">
+                    {Object.entries(result.adPerf)
+                      .sort((a, b) => b[1].totalViewers - a[1].totalViewers)
+                      .map(([key, p]) => {
+                        const malePct = p.totalViewers > 0 ? Math.round((p.males / p.totalViewers) * 100) : 0;
+                        const avgV    = p.seconds > 0 ? (p.totalViewers / p.seconds).toFixed(1) : 0;
+                        return (
+                          <div key={key} className="bg-slate-800 rounded-xl p-3">
+                            <div className="flex items-start gap-3 mb-2">
+                              <span className="text-2xl">{p.ad.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-white font-bold text-sm">{p.ad.brand}</div>
+                                <div className="text-slate-400 text-xs italic">"{p.ad.headline}"</div>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 mb-2">
+                              <div className="text-center">
+                                <div className="text-green-400 font-bold text-sm">{p.totalViewers}</div>
+                                <div className="text-slate-600 text-xs">total views</div>
+                              </div>
+                              <div className="text-center">
+                                <div className="text-blue-400 font-bold text-sm">{p.seconds}s</div>
+                                <div className="text-slate-600 text-xs">on screen</div>
+                              </div>
+                              <div className="text-center">
+                                <div className="text-yellow-400 font-bold text-sm">{avgV}</div>
+                                <div className="text-slate-600 text-xs">avg viewers</div>
+                              </div>
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              Reached <span className="text-slate-300">{p.totalViewers} {p.ad.reachDesc}</span> · {malePct}% male · {100 - malePct}% female
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden flex mt-2">
+                              <div className="bg-blue-500 h-full" style={{ width: `${malePct}%` }} />
+                              <div className="bg-pink-500 h-full" style={{ width: `${100 - malePct}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <button
                 onClick={onClose}
