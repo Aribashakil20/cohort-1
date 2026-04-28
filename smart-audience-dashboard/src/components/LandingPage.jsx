@@ -8,6 +8,15 @@ import {
   AreaChart, Area, LineChart, Line,
   ResponsiveContainer, Tooltip
 } from "recharts";
+
+const AGE_ORDER  = ["child", "youth", "adult", "middle_aged", "senior"];
+const AGE_COLORS = { child: "#a78bfa", youth: "#60a5fa", adult: "#34d399", middle_aged: "#fb923c", senior: "#f87171" };
+const AD_ICONS   = {
+  "Toys / Boys Games":"🚀","Toys / Girls Games":"🎀","Gaming / Sports":"🎮",
+  "Fashion / Beauty":"👗","Cars / Finance":"🚗","Lifestyle / Travel":"✈️",
+  "Health / Home Appliances":"🏠","Skincare / Wellness":"💆",
+  "Healthcare / Insurance":"🏥","General Ad":"📢",
+};
 import BrowserCamera from "./BrowserCamera";
 import VideoAnalysis from "./VideoAnalysis";
 
@@ -349,62 +358,106 @@ export default function LandingPage({ onEnterDashboard }) {
               <div className="text-slate-500 text-sm uppercase tracking-widest mb-2">Video analysis</div>
               <h2 className="text-2xl font-bold">Your recordings</h2>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {recordings.map((rec, i) => (
-                <div key={rec.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col gap-3 hover:border-indigo-500/30 transition-colors">
-                  {/* Title row */}
+                <div key={rec.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col gap-4 hover:border-indigo-500/30 transition-colors">
+
+                  {/* Title */}
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="text-white font-semibold text-sm">Recording {i + 1}</div>
+                      <div className="text-white font-semibold">Recording {i + 1}</div>
                       <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="text-xs text-slate-500">📍</span>
+                        <span className="text-slate-500 text-xs">📍</span>
                         <span className="text-indigo-400 text-xs font-medium">{rec.location}</span>
                       </div>
                     </div>
-                    <span className="text-xs text-slate-600 shrink-0 ml-2">{rec.duration}s</span>
+                    <span className="text-xs text-slate-600">{rec.duration}s · {rec.timestamp}</span>
                   </div>
 
-                  {/* Stats row */}
-                  {rec.stats ? (
-                    <>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="bg-slate-800 rounded-lg p-2 text-center">
-                          <div className="text-green-400 font-bold text-lg">{rec.stats.total}</div>
-                          <div className="text-slate-500 text-xs">Detections</div>
-                        </div>
-                        <div className="bg-slate-800 rounded-lg p-2 text-center">
-                          <div className="text-purple-400 font-bold text-lg">{rec.stats.avgAge}</div>
-                          <div className="text-slate-500 text-xs">Avg age</div>
-                        </div>
-                        <div className="bg-slate-800 rounded-lg p-2 text-center">
-                          <div className={`font-bold text-sm leading-tight mt-1 ${
-                            rec.stats.crowdGender === "male" ? "text-blue-400" :
-                            rec.stats.crowdGender === "female" ? "text-pink-400" : "text-yellow-400"
-                          }`}>{rec.stats.crowdGender}</div>
-                          <div className="text-slate-500 text-xs">Gender</div>
-                        </div>
-                      </div>
+                  {rec.stats ? (<>
 
-                      {/* Gender bar */}
-                      <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden flex">
+                    {/* Key numbers */}
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: "Detections",   value: rec.stats.total,    color: "text-green-400"  },
+                        { label: "Peak viewers", value: rec.peakViewers,    color: "text-yellow-400" },
+                        { label: "Avg age",      value: rec.stats.avgAge,   color: "text-purple-400" },
+                        { label: "Gender",       value: rec.stats.crowdGender,
+                          color: rec.stats.crowdGender === "male" ? "text-blue-400" : rec.stats.crowdGender === "female" ? "text-pink-400" : "text-yellow-400" },
+                      ].map(({ label, value, color }) => (
+                        <div key={label} className="bg-slate-800 rounded-lg p-2 text-center">
+                          <div className={`font-bold text-base ${color}`}>{value}</div>
+                          <div className="text-slate-500 text-xs leading-tight mt-0.5">{label}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Timeline chart */}
+                    {rec.timeline?.length > 0 && (
+                      <div>
+                        <div className="text-slate-500 text-xs uppercase tracking-widest mb-2">Audience flow</div>
+                        <ResponsiveContainer width="100%" height={64}>
+                          <AreaChart data={rec.timeline} margin={{ top: 2, right: 0, bottom: 0, left: -24 }}>
+                            <defs>
+                              <linearGradient id={`g-${rec.id}`} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%"   stopColor="#818cf8" stopOpacity={0.4} />
+                                <stop offset="100%" stopColor="#818cf8" stopOpacity={0}   />
+                              </linearGradient>
+                            </defs>
+                            <Tooltip
+                              contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 6, fontSize: 11 }}
+                              formatter={v => [`${v} faces`, ""]}
+                              labelFormatter={l => `${l}`}
+                            />
+                            <Area type="monotone" dataKey="count" stroke="#818cf8" strokeWidth={2} fill={`url(#g-${rec.id})`} dot={false} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    {/* Age breakdown */}
+                    <div>
+                      <div className="text-slate-500 text-xs uppercase tracking-widest mb-2">Age breakdown</div>
+                      <div className="space-y-1.5">
+                        {AGE_ORDER.filter(g => rec.stats.ageCounts?.[g]).map(g => {
+                          const pct = Math.round((rec.stats.ageCounts[g] / rec.stats.total) * 100);
+                          return (
+                            <div key={g} className="flex items-center gap-2">
+                              <span className="text-slate-500 text-xs w-16 shrink-0 capitalize">{g.replace("_"," ")}</span>
+                              <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: AGE_COLORS[g] }} />
+                              </div>
+                              <span className="text-xs text-slate-400 w-7 text-right">{pct}%</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Gender bar */}
+                    <div>
+                      <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden flex mb-1">
                         <div className="bg-blue-500 h-full" style={{ width: `${rec.stats.malePct * 100}%` }} />
                         <div className="bg-pink-500 h-full" style={{ width: `${rec.stats.femalePct * 100}%` }} />
                       </div>
-
-                      {/* Ad recommendation */}
-                      <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl px-3 py-2.5 flex items-center gap-2">
-                        <span className="text-lg">{{"Toys / Boys Games":"🚀","Toys / Girls Games":"🎀","Gaming / Sports":"🎮","Fashion / Beauty":"👗","Cars / Finance":"🚗","Lifestyle / Travel":"✈️","Health / Home Appliances":"🏠","Skincare / Wellness":"💆","Healthcare / Insurance":"🏥","General Ad":"📢"}[rec.stats.adCategory] || "📢"}</span>
-                        <div>
-                          <div className="text-white text-xs font-semibold">{rec.stats.adCategory}</div>
-                          <div className="text-slate-500 text-xs">{rec.stats.dominantAge.replace("_"," ")} · {rec.stats.dominantExpr}</div>
-                        </div>
+                      <div className="flex justify-between text-xs text-slate-500">
+                        <span>Male {Math.round(rec.stats.malePct * 100)}%</span>
+                        <span>Female {Math.round(rec.stats.femalePct * 100)}%</span>
                       </div>
-                    </>
-                  ) : (
+                    </div>
+
+                    {/* Ad recommendation */}
+                    <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl px-3 py-2.5 flex items-center gap-2">
+                      <span className="text-xl">{AD_ICONS[rec.stats.adCategory] || "📢"}</span>
+                      <div>
+                        <div className="text-white text-xs font-semibold">{rec.stats.adCategory}</div>
+                        <div className="text-slate-500 text-xs">{rec.stats.dominantAge.replace("_"," ")} · {rec.stats.dominantExpr}</div>
+                      </div>
+                    </div>
+
+                  </>) : (
                     <div className="text-slate-500 text-sm">No faces detected</div>
                   )}
-
-                  <div className="text-slate-600 text-xs mt-auto">{rec.timestamp}</div>
                 </div>
               ))}
 

@@ -1,23 +1,31 @@
 /**
  * VideoAnalysis.jsx — Record or upload a video and analyse it with face-api.js
  *
- * Flow:
- *   1. User enters a location name (e.g. "Mall Entrance")
- *   2. Chooses "Record from camera" or "Upload video file"
- *   3. AI processes the video frame-by-frame (1 fps) with a progress bar
- *   4. Results are returned to the parent as a structured recording object
- *
- * All inference runs in the browser — no data leaves the device.
+ * Features:
+ *   1. Record from camera or upload a video file
+ *   2. AI processes frame-by-frame (1 fps) with progress bar
+ *   3. Timeline chart — faces detected per second (audience flow)
+ *   4. Age breakdown chart — distribution across age groups
+ *   5. Download summary — exports a text report
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import * as faceapi from "face-api.js";
+import {
+  AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from "recharts";
 
 const MODEL_URL = "/models";
 const GENDER_THRESHOLD = 0.60;
 const AGE_THRESHOLD    = 0.60;
+const AGE_ORDER = ["child", "youth", "adult", "middle_aged", "senior"];
+const AGE_COLORS = {
+  child: "#a78bfa", youth: "#60a5fa", adult: "#34d399",
+  middle_aged: "#fb923c", senior: "#f87171",
+};
 
-// ── Shared ad logic ────────────────────────────────────────────────────────────
+// ── Ad logic ───────────────────────────────────────────────────────────────────
 function getAgeGroup(age) {
   if (age <= 12) return "child";
   if (age <= 24) return "youth";
@@ -44,21 +52,21 @@ const NEGATIVE_OVERRIDE = {
 };
 const AD_ICONS = {
   "Toys / Boys Games": "🚀", "Toys / Girls Games": "🎀",
-  "Gaming / Sports": "🎮",  "Fashion / Beauty": "👗",
-  "Cars / Finance": "🚗",   "Lifestyle / Travel": "✈️",
+  "Gaming / Sports": "🎮",   "Fashion / Beauty": "👗",
+  "Cars / Finance": "🚗",    "Lifestyle / Travel": "✈️",
   "Health / Home Appliances": "🏠", "Skincare / Wellness": "💆",
-  "Healthcare / Insurance": "🏥",  "General Ad": "📢",
+  "Healthcare / Insurance": "🏥",   "General Ad": "📢",
 };
 
 function computeStats(allDetections) {
   const total = allDetections.length;
   if (total === 0) return null;
 
-  const males      = allDetections.filter(d => d.gender === "male"   && d.genderProbability > 0.6).length;
-  const females    = allDetections.filter(d => d.gender === "female" && d.genderProbability > 0.6).length;
+  const males     = allDetections.filter(d => d.gender === "male"   && d.genderProbability > 0.6).length;
+  const females   = allDetections.filter(d => d.gender === "female" && d.genderProbability > 0.6).length;
   const genderKnown = males + females;
-  const malePct    = genderKnown > 0 ? males   / genderKnown : 0;
-  const femalePct  = genderKnown > 0 ? females / genderKnown : 0;
+  const malePct   = genderKnown > 0 ? males   / genderKnown : 0;
+  const femalePct = genderKnown > 0 ? females / genderKnown : 0;
   const crowdGender = malePct >= GENDER_THRESHOLD ? "male" : femalePct >= GENDER_THRESHOLD ? "female" : "mixed";
 
   const ageCounts = {};
@@ -66,8 +74,8 @@ function computeStats(allDetections) {
     const g = getAgeGroup(Math.round(d.age));
     ageCounts[g] = (ageCounts[g] || 0) + 1;
   });
-  const dominantAge    = Object.entries(ageCounts).sort((a,b) => b[1]-a[1])[0][0];
-  const ageConfident   = ageCounts[dominantAge] / total >= AGE_THRESHOLD;
+  const dominantAge  = Object.entries(ageCounts).sort((a,b) => b[1]-a[1])[0][0];
+  const ageConfident = ageCounts[dominantAge] / total >= AGE_THRESHOLD;
 
   const exprTotals = {};
   allDetections.forEach(d => {
@@ -88,18 +96,18 @@ function computeStats(allDetections) {
   }
 
   const avgAge = Math.round(allDetections.reduce((s, d) => s + d.age, 0) / total);
-
   return { total, males, females, malePct, femalePct, crowdGender, dominantAge, ageConfident, dominantExpr, adCategory, avgAge, exprTotals, ageCounts };
 }
 
-// ── Process a video element frame-by-frame ────────────────────────────────────
+// ── Process video frame-by-frame, return detections + timeline ────────────────
 async function analyzeVideoElement(videoEl, onProgress) {
   const duration = isFinite(videoEl.duration) ? videoEl.duration : 0;
-  if (duration === 0) return [];
+  if (duration === 0) return { detections: [], timeline: [] };
 
-  const STEP = 1; // seconds between sampled frames
-  const allDetections = [];
+  const STEP  = 1;
   const steps = Math.floor(duration / STEP);
+  const allDetections = [];
+  const timeline = [];
 
   for (let i = 0; i <= steps; i++) {
     videoEl.currentTime = i * STEP;
@@ -111,30 +119,136 @@ async function analyzeVideoElement(videoEl, onProgress) {
       .withFaceExpressions();
 
     allDetections.push(...dets);
+    timeline.push({ t: i, count: dets.length, label: `${i}s` });
     onProgress(Math.round(((i + 1) / (steps + 1)) * 100));
   }
-  return allDetections;
+  return { detections: allDetections, timeline };
+}
+
+// ── Download summary as a text report ─────────────────────────────────────────
+function downloadSummary(rec) {
+  const s = rec.stats;
+  const lines = [
+    "SmartAudience — Recording Analysis Report",
+    "==========================================",
+    `Recording : ${rec.index}`,
+    `Location  : ${rec.location}`,
+    `Date      : ${rec.timestamp}`,
+    `Duration  : ${rec.duration}s`,
+    "",
+    "AUDIENCE SUMMARY",
+    "----------------",
+    `Total face detections : ${s.total}`,
+    `Average age           : ${s.avgAge} years`,
+    `Dominant age group    : ${s.dominantAge.replace("_", " ")}`,
+    `Peak viewers          : ${rec.peakViewers}`,
+    "",
+    "GENDER SPLIT",
+    "------------",
+    `Male              : ${Math.round(s.malePct * 100)}%`,
+    `Female            : ${Math.round(s.femalePct * 100)}%`,
+    `Classification    : ${s.crowdGender} crowd`,
+    "",
+    "AGE BREAKDOWN",
+    "-------------",
+    ...AGE_ORDER.filter(g => s.ageCounts[g]).map(g =>
+      `${g.padEnd(12)}: ${s.ageCounts[g]} detections (${Math.round(s.ageCounts[g] / s.total * 100)}%)`
+    ),
+    "",
+    "AD RECOMMENDATION",
+    "-----------------",
+    `Recommended ad : ${s.adCategory}`,
+    `Reasoning      : ${s.dominantAge.replace("_"," ")} · ${s.crowdGender} crowd · mood: ${s.dominantExpr}`,
+    "",
+    "──────────────────────────────────────────",
+    "Generated by SmartAudience",
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href     = url;
+  a.download = `smartaudience-${rec.index}-${rec.location.replace(/\s+/g, "-").toLowerCase()}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Chart sub-components ───────────────────────────────────────────────────────
+function TimelineChart({ timeline }) {
+  if (!timeline?.length) return null;
+  return (
+    <div>
+      <div className="text-slate-500 text-xs uppercase tracking-widest mb-2">
+        Audience flow — faces per second
+      </div>
+      <ResponsiveContainer width="100%" height={80}>
+        <AreaChart data={timeline} margin={{ top: 4, right: 0, bottom: 0, left: -20 }}>
+          <defs>
+            <linearGradient id="tl-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"   stopColor="#818cf8" stopOpacity={0.4} />
+              <stop offset="100%" stopColor="#818cf8" stopOpacity={0}   />
+            </linearGradient>
+          </defs>
+          <XAxis dataKey="label" tick={{ fill: "#475569", fontSize: 10 }} interval="preserveStartEnd" />
+          <YAxis allowDecimals={false} tick={{ fill: "#475569", fontSize: 10 }} />
+          <Tooltip
+            contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8, fontSize: 12 }}
+            labelStyle={{ color: "#94a3b8" }}
+            itemStyle={{ color: "#818cf8" }}
+            formatter={v => [`${v} faces`, ""]}
+          />
+          <Area type="monotone" dataKey="count" stroke="#818cf8" strokeWidth={2} fill="url(#tl-grad)" dot={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function AgeBreakdown({ ageCounts, total }) {
+  if (!ageCounts) return null;
+  const groups = AGE_ORDER.filter(g => ageCounts[g]);
+  if (!groups.length) return null;
+  return (
+    <div>
+      <div className="text-slate-500 text-xs uppercase tracking-widest mb-3">Age breakdown</div>
+      <div className="space-y-2">
+        {groups.map(g => {
+          const pct = Math.round((ageCounts[g] / total) * 100);
+          return (
+            <div key={g} className="flex items-center gap-3">
+              <span className="text-slate-400 text-xs w-20 shrink-0 capitalize">{g.replace("_"," ")}</span>
+              <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${pct}%`, backgroundColor: AGE_COLORS[g] }}
+                />
+              </div>
+              <span className="text-xs text-slate-400 w-8 text-right">{pct}%</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function VideoAnalysis({ onClose, onRecordingComplete, recordingIndex }) {
-  const [modelsReady,   setModelsReady]   = useState(false);
-  const [modelError,    setModelError]    = useState(false);
-  const [location,      setLocation]      = useState("");
-  // mode: idle | recording | stopping | processing | done | error
-  const [mode,          setMode]          = useState("idle");
-  const [progress,      setProgress]      = useState(0);
-  const [recordingSec,  setRecordingSec]  = useState(0);
-  const [result,        setResult]        = useState(null);
+  const [modelsReady,  setModelsReady]  = useState(false);
+  const [modelError,   setModelError]   = useState(false);
+  const [location,     setLocation]     = useState("");
+  const [mode,         setMode]         = useState("idle"); // idle|recording|stopping|processing|done|error
+  const [progress,     setProgress]     = useState(0);
+  const [recordingSec, setRecordingSec] = useState(0);
+  const [result,       setResult]       = useState(null);
 
-  const liveVideoRef    = useRef(null);
-  const streamRef       = useRef(null);
-  const recorderRef     = useRef(null);
-  const chunksRef       = useRef([]);
-  const timerRef        = useRef(null);
-  const fileInputRef    = useRef(null);
+  const liveVideoRef = useRef(null);
+  const streamRef    = useRef(null);
+  const recorderRef  = useRef(null);
+  const chunksRef    = useRef([]);
+  const timerRef     = useRef(null);
+  const fileInputRef = useRef(null);
 
-  // ── Load models ────────────────────────────────────────────────────────────
+  // ── Load models ──────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
       try {
@@ -153,15 +267,12 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
     };
   }, []);
 
-  // ── Record from camera ─────────────────────────────────────────────────────
+  // ── Record from camera ────────────────────────────────────────────────────
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       streamRef.current = stream;
-      if (liveVideoRef.current) {
-        liveVideoRef.current.srcObject = stream;
-        liveVideoRef.current.play();
-      }
+      if (liveVideoRef.current) { liveVideoRef.current.srcObject = stream; liveVideoRef.current.play(); }
       chunksRef.current = [];
       const recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
       recorderRef.current = recorder;
@@ -170,9 +281,7 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
       setMode("recording");
       setRecordingSec(0);
       timerRef.current = setInterval(() => setRecordingSec(s => s + 1), 1000);
-    } catch {
-      setMode("error");
-    }
+    } catch { setMode("error"); }
   }, []);
 
   const stopRecording = useCallback(() => {
@@ -180,14 +289,12 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
     setMode("stopping");
     recorderRef.current?.stop();
     streamRef.current?.getTracks().forEach(t => t.stop());
-
     recorderRef.current.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "video/webm" });
-      await processBlob(blob);
+      await processBlob(new Blob(chunksRef.current, { type: "video/webm" }));
     };
   }, []); // eslint-disable-line
 
-  // ── Upload handler ─────────────────────────────────────────────────────────
+  // ── Upload ────────────────────────────────────────────────────────────────
   const handleFileChange = useCallback(async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -196,35 +303,26 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
     await processBlob(file);
   }, []); // eslint-disable-line
 
-  // ── Core: process a Blob ───────────────────────────────────────────────────
+  // ── Core processing ───────────────────────────────────────────────────────
   async function processBlob(blob) {
     setMode("processing");
     setProgress(0);
-
-    const url = URL.createObjectURL(blob);
+    const url   = URL.createObjectURL(blob);
     const video = document.createElement("video");
-    video.src   = url;
-    video.muted = true;
-    video.preload = "auto";
-
+    video.src = url; video.muted = true; video.preload = "auto";
     try {
-      await new Promise((res, rej) => {
-        video.onloadedmetadata = res;
-        video.onerror = rej;
-      });
-
-      const allDetections = await analyzeVideoElement(video, setProgress);
+      await new Promise((res, rej) => { video.onloadedmetadata = res; video.onerror = rej; });
+      const { detections, timeline } = await analyzeVideoElement(video, setProgress);
       URL.revokeObjectURL(url);
 
-      const stats = computeStats(allDetections);
-      const recording = {
-        id:        Date.now(),
-        index:     recordingIndex,
+      const stats      = computeStats(detections);
+      const peakViewers = timeline.length ? Math.max(...timeline.map(t => t.count)) : 0;
+      const recording  = {
+        id: Date.now(), index: recordingIndex,
         location:  location.trim() || "Unknown location",
         timestamp: new Date().toLocaleString(),
         duration:  Math.round(video.duration),
-        peakViewers: 0, // computed below
-        stats,
+        peakViewers, timeline, stats,
       };
       setResult(recording);
       onRecordingComplete(recording);
@@ -235,13 +333,12 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
     }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
   const fmtSec = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl flex flex-col overflow-hidden max-h-[90vh]">
+      <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl flex flex-col overflow-hidden max-h-[92vh]">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
@@ -250,8 +347,7 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
             <span className="font-semibold text-white">Recording {recordingIndex}</span>
             {mode === "recording" && (
               <span className="flex items-center gap-1.5 text-xs text-red-400 bg-red-400/10 border border-red-400/20 px-2 py-0.5 rounded-full">
-                <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />
-                REC {fmtSec(recordingSec)}
+                <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" /> REC {fmtSec(recordingSec)}
               </span>
             )}
           </div>
@@ -263,51 +359,39 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
         {/* Body */}
         <div className="overflow-y-auto flex-1 p-6 space-y-5">
 
-          {/* Model loading */}
+          {/* Model loading / error */}
           {!modelsReady && !modelError && (
             <div className="text-center py-8">
               <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
               <div className="text-slate-400 text-sm">Loading AI models...</div>
             </div>
           )}
-          {modelError && (
-            <div className="text-center py-8 text-slate-400 text-sm">
-              Failed to load models. Check your connection and refresh.
-            </div>
-          )}
+          {modelError && <div className="text-center py-8 text-slate-400 text-sm">Failed to load models. Check your connection and refresh.</div>}
 
           {modelsReady && mode !== "done" && (
             <>
-              {/* Location input */}
+              {/* Location */}
               <div>
                 <label className="block text-slate-400 text-xs uppercase tracking-widest mb-2">Location label</label>
                 <input
-                  type="text"
-                  value={location}
-                  onChange={e => setLocation(e.target.value)}
+                  type="text" value={location} onChange={e => setLocation(e.target.value)}
                   placeholder="e.g. Mall Entrance, Food Court, Gate 3…"
                   disabled={mode !== "idle"}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
                 />
               </div>
 
-              {/* Mode idle — two options */}
+              {/* Idle — pick mode */}
               {mode === "idle" && (
                 <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={startRecording}
-                    className="flex flex-col items-center gap-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-500/40 rounded-xl p-5 transition-all"
-                  >
+                  <button onClick={startRecording} className="flex flex-col items-center gap-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-500/40 rounded-xl p-5 transition-all">
                     <span className="text-3xl">🎥</span>
                     <div className="text-center">
                       <div className="text-white font-semibold text-sm">Record from camera</div>
                       <div className="text-slate-500 text-xs mt-0.5">Live recording via webcam</div>
                     </div>
                   </button>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex flex-col items-center gap-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-500/40 rounded-xl p-5 transition-all"
-                  >
+                  <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center gap-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-500/40 rounded-xl p-5 transition-all">
                     <span className="text-3xl">📁</span>
                     <div className="text-center">
                       <div className="text-white font-semibold text-sm">Upload video file</div>
@@ -318,72 +402,71 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
                 </div>
               )}
 
-              {/* Live camera preview while recording */}
+              {/* Recording — live preview */}
               {mode === "recording" && (
                 <div className="space-y-3">
-                  <video
-                    ref={liveVideoRef}
-                    autoPlay playsInline muted
-                    className="w-full rounded-xl bg-black"
-                    style={{ transform: "scaleX(-1)", maxHeight: "240px", objectFit: "cover" }}
-                  />
-                  <button
-                    onClick={stopRecording}
-                    className="w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
-                  >
-                    <span className="w-3 h-3 bg-white rounded-sm" />
-                    Stop & Analyse
+                  <video ref={liveVideoRef} autoPlay playsInline muted className="w-full rounded-xl bg-black" style={{ transform: "scaleX(-1)", maxHeight: "220px", objectFit: "cover" }} />
+                  <button onClick={stopRecording} className="w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
+                    <span className="w-3 h-3 bg-white rounded-sm" /> Stop & Analyse
                   </button>
                 </div>
               )}
 
-              {/* Processing / stopping */}
+              {/* Processing */}
               {(mode === "stopping" || mode === "processing") && (
                 <div className="py-6 space-y-4">
                   <div className="text-center text-slate-300 text-sm font-medium">
                     {mode === "stopping" ? "Preparing video…" : `Analysing frames… ${progress}%`}
                   </div>
                   <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-indigo-500 rounded-full transition-all duration-300"
-                      style={{ width: `${progress}%` }}
-                    />
+                    <div className="h-full bg-indigo-500 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
                   </div>
-                  <div className="text-center text-slate-500 text-xs">
-                    Processing 1 frame per second — this may take a moment
-                  </div>
+                  <div className="text-center text-slate-500 text-xs">Processing 1 frame per second — this may take a moment</div>
                 </div>
               )}
 
-              {mode === "error" && (
-                <div className="text-center text-slate-400 text-sm py-4">
-                  Something went wrong. Make sure the file is a valid video and try again.
-                </div>
-              )}
+              {mode === "error" && <div className="text-center text-slate-400 text-sm py-4">Something went wrong. Make sure the file is a valid video and try again.</div>}
             </>
           )}
 
-          {/* Done — show summary */}
+          {/* Done — full results */}
           {mode === "done" && result?.stats && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-green-400 text-sm font-medium">
-                <span>✓</span> Analysis complete
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-green-400 text-sm font-medium">
+                  <span>✓</span> Analysis complete — {result.location}
+                </div>
+                <button
+                  onClick={() => downloadSummary(result)}
+                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  ⬇ Download report
+                </button>
               </div>
 
               {/* Key numbers */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="bg-slate-800 rounded-xl p-3 text-center">
-                  <div className="text-green-400 font-bold text-2xl">{result.stats.total}</div>
-                  <div className="text-slate-500 text-xs mt-0.5">Face detections</div>
-                </div>
-                <div className="bg-slate-800 rounded-xl p-3 text-center">
-                  <div className="text-purple-400 font-bold text-2xl">{result.stats.avgAge}</div>
-                  <div className="text-slate-500 text-xs mt-0.5">Avg age</div>
-                </div>
-                <div className="bg-slate-800 rounded-xl p-3 text-center">
-                  <div className="text-indigo-400 font-bold text-lg leading-tight mt-1">{result.duration}s</div>
-                  <div className="text-slate-500 text-xs mt-0.5">Duration</div>
-                </div>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { label: "Detections", value: result.stats.total,    color: "text-green-400"  },
+                  { label: "Peak viewers", value: result.peakViewers,  color: "text-yellow-400" },
+                  { label: "Avg age",     value: result.stats.avgAge,  color: "text-purple-400" },
+                  { label: "Duration",    value: `${result.duration}s`,color: "text-indigo-400" },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="bg-slate-800 rounded-xl p-3 text-center">
+                    <div className={`font-bold text-xl ${color}`}>{value}</div>
+                    <div className="text-slate-500 text-xs mt-0.5 leading-tight">{label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Timeline chart */}
+              <div className="bg-slate-800 rounded-xl p-4">
+                <TimelineChart timeline={result.timeline} />
+              </div>
+
+              {/* Age breakdown */}
+              <div className="bg-slate-800 rounded-xl p-4">
+                <AgeBreakdown ageCounts={result.stats.ageCounts} total={result.stats.total} />
               </div>
 
               {/* Gender */}
@@ -411,24 +494,23 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
               {/* Ad recommendation */}
               <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl p-4">
                 <div className="text-slate-400 text-xs uppercase tracking-widest mb-2">Recommended Ad</div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-1">
                   <span className="text-2xl">{AD_ICONS[result.stats.adCategory] || "📢"}</span>
                   <span className="text-white font-bold">{result.stats.adCategory}</span>
                 </div>
-                <div className="text-slate-500 text-xs mt-1">
-                  {result.stats.dominantAge.replace("_"," ")} · {result.stats.crowdGender} · dominant mood: {result.stats.dominantExpr}
+                <div className="text-slate-500 text-xs">
+                  {result.stats.dominantAge.replace("_"," ")} · {result.stats.crowdGender} · mood: {result.stats.dominantExpr}
                 </div>
               </div>
 
               <button
                 onClick={onClose}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-colors"
               >
                 View recording card ↓
               </button>
             </div>
           )}
-
         </div>
 
         {/* Footer */}
