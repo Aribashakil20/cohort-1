@@ -9,6 +9,7 @@ import {
   ResponsiveContainer, Tooltip
 } from "recharts";
 import BrowserCamera from "./BrowserCamera";
+import VideoAnalysis from "./VideoAnalysis";
 
 // ── Sparkline demo data ────────────────────────────────────────────────────────
 const mkSparkline = (base, amp, n = 24) =>
@@ -88,8 +89,10 @@ function Step({ n, title, desc }) {
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export default function LandingPage({ onEnterDashboard }) {
-  const [scrolled,    setScrolled]    = useState(false);
-  const [showCamera,  setShowCamera]  = useState(false);
+  const [scrolled,       setScrolled]       = useState(false);
+  const [showCamera,     setShowCamera]     = useState(false);
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [recordings,     setRecordings]     = useState([]);
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 20);
@@ -100,9 +103,16 @@ export default function LandingPage({ onEnterDashboard }) {
   return (
     <div className="min-h-screen bg-slate-950 text-white font-sans">
 
-      {/* ── Browser Camera Overlay ──────────────────────────────────────────── */}
+      {/* ── Overlays ───────────────────────────────────────────────────────── */}
       {showCamera && (
         <BrowserCamera onClose={() => setShowCamera(false)} />
+      )}
+      {showVideoModal && (
+        <VideoAnalysis
+          recordingIndex={recordings.length + 1}
+          onClose={() => setShowVideoModal(false)}
+          onRecordingComplete={rec => setRecordings(prev => [...prev, rec])}
+        />
       )}
 
       {/* ── Navbar ─────────────────────────────────────────────────────────── */}
@@ -164,26 +174,25 @@ export default function LandingPage({ onEnterDashboard }) {
           </p>
 
           {/* CTAs */}
-          <div className="flex items-center justify-center gap-4 flex-wrap">
+          <div className="flex items-center justify-center gap-3 flex-wrap">
             <button
               onClick={() => setShowCamera(true)}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-7 py-3 rounded-xl transition-colors text-sm flex items-center gap-2"
+              className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm flex items-center gap-2"
             >
-              <span>📷</span> Test with your camera
+              <span>📷</span> Live camera
+            </button>
+            <button
+              onClick={() => setShowVideoModal(true)}
+              className="bg-slate-800 hover:bg-slate-700 text-white font-semibold px-6 py-3 rounded-xl border border-slate-700 hover:border-indigo-500/40 transition-colors text-sm flex items-center gap-2"
+            >
+              <span>🎥</span> Analyse a recording
             </button>
             <button
               onClick={onEnterDashboard}
-              className="text-slate-300 hover:text-white text-sm font-medium px-7 py-3 rounded-xl border border-slate-700 hover:border-slate-500 transition-colors"
+              className="text-slate-400 hover:text-white text-sm px-6 py-3 rounded-xl border border-slate-700 hover:border-slate-500 transition-colors"
             >
-              Open Dashboard →
+              Dashboard →
             </button>
-            <a
-              href="https://github.com/Aribashakil20/cohort-1"
-              target="_blank" rel="noreferrer"
-              className="text-slate-400 hover:text-white text-sm px-4 py-3 transition-colors"
-            >
-              GitHub ↗
-            </a>
           </div>
         </div>
       </section>
@@ -316,6 +325,86 @@ export default function LandingPage({ onEnterDashboard }) {
           </div>
         </div>
       </section>
+
+      {/* ── Recordings ─────────────────────────────────────────────────────── */}
+      {recordings.length > 0 && (
+        <section id="recordings" className="py-16 px-6">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-10">
+              <div className="text-slate-500 text-sm uppercase tracking-widest mb-2">Video analysis</div>
+              <h2 className="text-2xl font-bold">Your recordings</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {recordings.map((rec, i) => (
+                <div key={rec.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col gap-3 hover:border-indigo-500/30 transition-colors">
+                  {/* Title row */}
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-white font-semibold text-sm">Recording {i + 1}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-xs text-slate-500">📍</span>
+                        <span className="text-indigo-400 text-xs font-medium">{rec.location}</span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-slate-600 shrink-0 ml-2">{rec.duration}s</span>
+                  </div>
+
+                  {/* Stats row */}
+                  {rec.stats ? (
+                    <>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="bg-slate-800 rounded-lg p-2 text-center">
+                          <div className="text-green-400 font-bold text-lg">{rec.stats.total}</div>
+                          <div className="text-slate-500 text-xs">Detections</div>
+                        </div>
+                        <div className="bg-slate-800 rounded-lg p-2 text-center">
+                          <div className="text-purple-400 font-bold text-lg">{rec.stats.avgAge}</div>
+                          <div className="text-slate-500 text-xs">Avg age</div>
+                        </div>
+                        <div className="bg-slate-800 rounded-lg p-2 text-center">
+                          <div className={`font-bold text-sm leading-tight mt-1 ${
+                            rec.stats.crowdGender === "male" ? "text-blue-400" :
+                            rec.stats.crowdGender === "female" ? "text-pink-400" : "text-yellow-400"
+                          }`}>{rec.stats.crowdGender}</div>
+                          <div className="text-slate-500 text-xs">Gender</div>
+                        </div>
+                      </div>
+
+                      {/* Gender bar */}
+                      <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden flex">
+                        <div className="bg-blue-500 h-full" style={{ width: `${rec.stats.malePct * 100}%` }} />
+                        <div className="bg-pink-500 h-full" style={{ width: `${rec.stats.femalePct * 100}%` }} />
+                      </div>
+
+                      {/* Ad recommendation */}
+                      <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl px-3 py-2.5 flex items-center gap-2">
+                        <span className="text-lg">{{"Toys / Boys Games":"🚀","Toys / Girls Games":"🎀","Gaming / Sports":"🎮","Fashion / Beauty":"👗","Cars / Finance":"🚗","Lifestyle / Travel":"✈️","Health / Home Appliances":"🏠","Skincare / Wellness":"💆","Healthcare / Insurance":"🏥","General Ad":"📢"}[rec.stats.adCategory] || "📢"}</span>
+                        <div>
+                          <div className="text-white text-xs font-semibold">{rec.stats.adCategory}</div>
+                          <div className="text-slate-500 text-xs">{rec.stats.dominantAge.replace("_"," ")} · {rec.stats.dominantExpr}</div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-slate-500 text-sm">No faces detected</div>
+                  )}
+
+                  <div className="text-slate-600 text-xs mt-auto">{rec.timestamp}</div>
+                </div>
+              ))}
+
+              {/* Add another recording */}
+              <button
+                onClick={() => setShowVideoModal(true)}
+                className="bg-slate-900/50 border border-dashed border-slate-700 hover:border-indigo-500/40 rounded-2xl p-5 flex flex-col items-center justify-center gap-3 text-slate-500 hover:text-slate-300 transition-all min-h-[200px]"
+              >
+                <span className="text-3xl">＋</span>
+                <span className="text-sm font-medium">Add recording</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── CTA banner ─────────────────────────────────────────────────────── */}
       <section className="py-16 px-6">
