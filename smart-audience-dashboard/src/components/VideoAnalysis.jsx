@@ -422,9 +422,9 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
 
               <button
                 onClick={onClose}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-colors"
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
               >
-                Done
+                View recording card ↓
               </button>
             </div>
           )}

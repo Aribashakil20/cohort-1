@@ -3,7 +3,7 @@
  * Shown before the user enters the dashboard.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   AreaChart, Area, LineChart, Line,
   ResponsiveContainer, Tooltip
@@ -93,12 +93,27 @@ export default function LandingPage({ onEnterDashboard }) {
   const [showCamera,     setShowCamera]     = useState(false);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [recordings,     setRecordings]     = useState([]);
+  const recordingsSectionRef = useRef(null);
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", h);
     return () => window.removeEventListener("scroll", h);
   }, []);
+
+  function handleRecordingComplete(rec) {
+    setRecordings(prev => [...prev, rec]);
+  }
+
+  function handleVideoModalClose() {
+    setShowVideoModal(false);
+    // If there are recordings, scroll to the section after the modal closes
+    if (recordings.length >= 0) {
+      setTimeout(() => {
+        recordingsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 200);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white font-sans">
@@ -110,8 +125,8 @@ export default function LandingPage({ onEnterDashboard }) {
       {showVideoModal && (
         <VideoAnalysis
           recordingIndex={recordings.length + 1}
-          onClose={() => setShowVideoModal(false)}
-          onRecordingComplete={rec => setRecordings(prev => [...prev, rec])}
+          onClose={handleVideoModalClose}
+          onRecordingComplete={handleRecordingComplete}
         />
       )}
 
@@ -328,7 +343,7 @@ export default function LandingPage({ onEnterDashboard }) {
 
       {/* ── Recordings ─────────────────────────────────────────────────────── */}
       {recordings.length > 0 && (
-        <section id="recordings" className="py-16 px-6">
+        <section id="recordings" ref={recordingsSectionRef} className="py-16 px-6">
           <div className="max-w-5xl mx-auto">
             <div className="text-center mb-10">
               <div className="text-slate-500 text-sm uppercase tracking-widest mb-2">Video analysis</div>
