@@ -27,6 +27,7 @@ import { usePolling }    from "./hooks/usePolling";
 import { useWebSocket }  from "./hooks/useWebSocket";
 
 import LandingPage      from "./components/LandingPage";
+import DashboardCamera  from "./components/DashboardCamera";
 import StatusBar        from "./components/StatusBar";
 import TabBar           from "./components/TabBar";
 import StatCard         from "./components/StatCard";
@@ -118,10 +119,12 @@ const DEMO_DWELL = [
 // ── App ────────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [showLanding,    setShowLanding]    = useState(true);
-  const [connected,      setConnected]      = useState(false);
-  const [lastUpdate,     setLastUpdate]     = useState(null);
-  const [demoMode,       setDemoMode]       = useState(false);
+  const [showLanding,      setShowLanding]      = useState(true);
+  const [connected,        setConnected]        = useState(false);
+  const [lastUpdate,       setLastUpdate]       = useState(null);
+  const [demoMode,         setDemoMode]         = useState(false);
+  const [browserCamActive, setBrowserCamActive] = useState(false);
+  const [browserCamLive,   setBrowserCamLive]   = useState(null);
   const [activeTab,      setActiveTab]      = useState("live");
   const [screenName,     setScreenName]     = useState(
     () => localStorage.getItem("screenName") || "Screen 1"
@@ -197,8 +200,8 @@ export default function App() {
   const { data: summary    } = usePolling(sumFn,  Math.max(pollInterval, 10_000));
   const { data: dwell      } = usePolling(dwlFn,  Math.max(pollInterval, 15_000));
 
-  // Prefer WebSocket data for live (zero-lag), fall back to polling
-  const live = wsLive ?? polledLive;
+  // Browser cam overrides everything when active; otherwise prefer WebSocket, fall back to polling
+  const live = browserCamActive && browserCamLive ? browserCamLive : (wsLive ?? polledLive);
 
   // Track last update time
   useEffect(() => {
@@ -295,6 +298,36 @@ export default function App() {
         {activeTab === "live" && (
           <div className="space-y-4">
 
+            {/* Browser camera toggle banner */}
+            {!browserCamActive ? (
+              <div className="flex items-center justify-between bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3">
+                <div>
+                  <span className="text-slate-300 text-sm font-medium">No backend connected?</span>
+                  <span className="text-slate-500 text-xs ml-2">Use your device camera to drive the live view</span>
+                </div>
+                <button
+                  onClick={() => setBrowserCamActive(true)}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-2 shrink-0"
+                >
+                  📷 Use Browser Camera
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                  <span className="text-green-400 text-sm font-medium">Browser Camera Active</span>
+                  <span className="text-slate-500 text-xs">— live view is updating from your camera</span>
+                </div>
+                <button
+                  onClick={() => { setBrowserCamActive(false); setBrowserCamLive(null); }}
+                  className="text-slate-400 hover:text-white text-xs border border-slate-700 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Stop
+                </button>
+              </div>
+            )}
+
             {/* Row 1: 9 summary stat cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-3">
               <StatCard label="Viewers Now"       value={viewers}          icon="👥" highlight="text-green-400"  sub="current snapshot" />
@@ -388,6 +421,14 @@ export default function App() {
         )}
 
       </div>
+
+      {/* Floating browser camera widget — feeds live view when active */}
+      {browserCamActive && (
+        <DashboardCamera
+          onStats={setBrowserCamLive}
+          onStop={() => { setBrowserCamActive(false); setBrowserCamLive(null); }}
+        />
+      )}
     </div>
   );
 }
