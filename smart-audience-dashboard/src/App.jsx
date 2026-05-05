@@ -346,13 +346,19 @@ export default function App() {
               </div>
             )}
 
-            {/* Row 0: Ad Recommendation hero — full width, top of page */}
-            <div className="rounded-2xl border border-blue-500/30 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-1 shadow-lg shadow-blue-500/5">
-              <div className="rounded-xl overflow-hidden">
-                <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+            {/* ── 2-column master layout ── */}
+            <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 items-start">
+
+              {/* ── LEFT: Ad display — full, prominent (3/5 width) ── */}
+              <div className="xl:col-span-3 flex flex-col gap-3">
+
+                {/* Header label */}
+                <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
                   <span className="text-blue-400 text-xs font-semibold uppercase tracking-widest">Now Showing — AI-Selected Ad</span>
                 </div>
+
+                {/* Ad card — takes full column width */}
                 <AdRecommendation
                   ageGroup={ageGroup}
                   crowdGender={crowdGender}
@@ -361,54 +367,48 @@ export default function App() {
                   qualityScore={moodScore}
                   hero
                 />
+
+                {/* History chart below the ad */}
+                <HistoryChart history={history} />
               </div>
-            </div>
 
-            {/* Row 1: 9 summary stat cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-3">
-              <StatCard label="Viewers Now"       value={viewers}          icon="👥" highlight="text-green-400"  sub="current snapshot" />
-              <StatCard label="Avg Viewers"       value={avgViewers}       icon="📊" highlight="text-blue-400"   sub="last 30 windows" />
-              <StatCard label="Avg Engagement"    value={avgEngagement}    icon="🎯" highlight="text-yellow-400" sub="last 30 windows" />
-              <StatCard
-                label="Attention Score"
-                value={attentionScore != null ? attentionScore : "—"}
-                icon="🎯"
-                highlight={attentionColor}
-                sub="how intently watching"
-              />
-              <StatCard label="Dominant Age"      value={ageGroup}         icon="🎂" highlight="text-purple-400" sub="current audience" />
-              <StatCard label="Avg Dwell Time"    value={avgDwell}         icon="⏱️" highlight="text-orange-400" sub={`${dwell?.length ?? 0} sessions`} />
-              <StatCard label="Impressions Today" value={impressionsToday} icon="👁️" highlight="text-cyan-400"   sub="total viewers seen" />
-              <StatCard
-                label="Mood Score"
-                value={live ? moodScore : "—"}
-                icon={moodIcon}
-                highlight={moodScore >= 70 ? "text-green-400" : moodScore >= 40 ? "text-yellow-400" : "text-red-400"}
-                sub={live ? dominantEmotion : "no data"}
-              />
-              <StatCard
-                label="Unique Visitors"
-                value={uniqueVisitors}
-                icon="🪪"
-                highlight="text-blue-400"
-                sub="since startup"
-              />
-            </div>
+              {/* ── RIGHT: Stats panel (2/5 width) ── */}
+              <div className="xl:col-span-2 flex flex-col gap-3">
 
-            {/* Row 2: Gender bar + Engagement gauge + Emotion chart */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <GenderBar malePct={malePct} femalePct={femalePct} maleCount={maleCount} femaleCount={femaleCount} crowdGender={crowdGender} />
-              <EngagementGauge rate={engRate} prevRate={prevRate} />
-              <EmotionChart data={live} dominant={dominantEmotion} />
-            </div>
+                {/* Key stat cards — 2 column grid */}
+                <div className="grid grid-cols-2 gap-2">
+                  <StatCard label="Viewers Now"    value={viewers}       icon="👥" highlight="text-green-400"  sub="current snapshot" />
+                  <StatCard label="Avg Viewers"    value={avgViewers}    icon="📊" highlight="text-blue-400"   sub="last 30 windows" />
+                  <StatCard label="Avg Engagement" value={avgEngagement} icon="🎯" highlight="text-yellow-400" sub="last 30 windows" />
+                  <StatCard
+                    label="Attention Score"
+                    value={attentionScore != null ? attentionScore : "—"}
+                    icon="🧠"
+                    highlight={attentionColor}
+                    sub="how intently watching"
+                  />
+                  <StatCard label="Dominant Age"      value={ageGroup}         icon="🎂" highlight="text-purple-400" sub="current audience" />
+                  <StatCard label="Avg Dwell Time"    value={avgDwell}         icon="⏱️" highlight="text-orange-400" sub={`${dwell?.length ?? 0} sessions`} />
+                  <StatCard label="Impressions Today" value={impressionsToday} icon="👁️" highlight="text-cyan-400"   sub="total viewers seen" />
+                  <StatCard
+                    label="Mood Score"
+                    value={live ? moodScore : "—"}
+                    icon={moodIcon}
+                    highlight={moodScore >= 70 ? "text-green-400" : moodScore >= 40 ? "text-yellow-400" : "text-red-400"}
+                    sub={live ? dominantEmotion : "no data"}
+                  />
+                </div>
 
-            {/* Row 3: History line chart */}
-            <HistoryChart history={history} />
+                {/* Gender + Engagement + Emotion */}
+                <GenderBar malePct={malePct} femalePct={femalePct} maleCount={maleCount} femaleCount={femaleCount} crowdGender={crowdGender} />
+                <EngagementGauge rate={engRate} prevRate={prevRate} />
+                <EmotionChart data={live} dominant={dominantEmotion} />
 
-            {/* Row 4: Age breakdown + Dwell chart */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <AgeChart data={live} />
-              <DwellChart sessions={dwell} />
+                {/* Age breakdown + Dwell */}
+                <AgeChart data={live} />
+                <DwellChart sessions={dwell} />
+              </div>
+
             </div>
 
           </div>

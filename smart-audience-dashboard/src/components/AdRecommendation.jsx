@@ -149,61 +149,58 @@ function AdBanner({ ad, hero = false }) {
   if (hero) {
     return (
       <div
-        className="rounded-xl overflow-hidden border-2 shadow-xl flex"
-        style={{ borderColor: `${ad?.color ?? "#334155"}66`, minHeight: "260px" }}
+        className="rounded-xl overflow-hidden border-2 shadow-xl relative w-full"
+        style={{ borderColor: `${ad?.color ?? "#334155"}66` }}
       >
-        {/* Left — ad visual (2/3 width) */}
-        <div className="flex-1 relative">
-          {showImage ? (
-            <img
-              src={imgSrc}
-              alt={ad?.brand}
-              className="w-full h-full object-cover"
-              style={{ minHeight: "260px" }}
-              onError={() => setImgFailed(true)}
-            />
-          ) : (
-            <div
-              className="w-full h-full flex flex-col items-center justify-center px-8 py-8 overflow-hidden relative"
-              style={{ background: style.bg, minHeight: "260px" }}
-            >
-              <div className="absolute inset-0 pointer-events-none" style={{ background: style.pattern }} />
-              <div className="text-7xl mb-3 drop-shadow-lg relative z-10">{ad?.icon ?? "📢"}</div>
-              <div className="text-3xl font-black tracking-tight text-center relative z-10 drop-shadow" style={{ color: style.text }}>
-                {ad?.brand}
-              </div>
-              <div className="text-base italic mt-2 font-medium text-center relative z-10" style={{ color: style.sub }}>
-                "{ad?.headline}"
-              </div>
+        {/* Full-width ad image */}
+        {showImage ? (
+          <img
+            src={imgSrc}
+            alt={ad?.brand}
+            className="w-full object-cover"
+            style={{ height: "420px" }}
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <div
+            className="w-full flex flex-col items-center justify-center overflow-hidden relative"
+            style={{ background: style.bg, height: "420px" }}
+          >
+            <div className="absolute inset-0 pointer-events-none" style={{ background: style.pattern }} />
+            <div className="text-8xl mb-4 drop-shadow-lg relative z-10">{ad?.icon ?? "📢"}</div>
+            <div className="text-4xl font-black tracking-tight text-center relative z-10 drop-shadow" style={{ color: style.text }}>
+              {ad?.brand}
             </div>
-          )}
-          {/* NOW ON AIR overlay */}
-          <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/70 rounded-full px-3 py-1">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-white text-[10px] font-bold tracking-widest uppercase">Now On Air</span>
+            <div className="text-lg italic mt-2 font-medium text-center relative z-10" style={{ color: style.sub }}>
+              "{ad?.headline}"
+            </div>
           </div>
+        )}
+
+        {/* Top-left: NOW ON AIR */}
+        <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm rounded-full px-3 py-1.5">
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-white text-[10px] font-bold tracking-widest uppercase">Now On Air</span>
         </div>
 
-        {/* Right — info panel (1/3 width) */}
+        {/* Top-right: category badge */}
+        <div className="absolute top-3 right-3">
+          <span
+            className="text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider"
+            style={{ background: style.badge, color: style.badgeText }}
+          >
+            {ad?.category}
+          </span>
+        </div>
+
+        {/* Bottom overlay: brand + headline + target */}
         <div
-          className="w-64 flex flex-col justify-between px-5 py-5 shrink-0"
-          style={{ background: "rgba(0,0,0,0.80)" }}
+          className="absolute bottom-0 left-0 right-0 px-5 py-4"
+          style={{ background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%)" }}
         >
-          <div>
-            <span
-              className="text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider"
-              style={{ background: style.badge, color: style.badgeText }}
-            >
-              {ad?.category}
-            </span>
-            <div className="text-white text-2xl font-black mt-3 leading-tight">{ad?.brand}</div>
-            <div className="text-slate-300 text-sm italic mt-1">"{ad?.headline}"</div>
-          </div>
-          <div className="space-y-2 mt-4">
-            <div className="text-slate-500 text-xs uppercase tracking-wider">Target audience</div>
-            <div className="text-slate-200 text-sm font-medium">{ad?.target}</div>
-            <div className="text-slate-500 text-xs mt-2 leading-relaxed">{ad?.description}</div>
-          </div>
+          <div className="text-white text-2xl font-black leading-tight drop-shadow">{ad?.brand}</div>
+          <div className="text-slate-200 text-sm italic mt-0.5">"{ad?.headline}"</div>
+          <div className="text-slate-400 text-xs mt-1">Target: <span className="text-slate-200">{ad?.target}</span></div>
         </div>
       </div>
     );
