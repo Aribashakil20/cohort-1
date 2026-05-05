@@ -23,11 +23,16 @@ export default function StatusBar({
   return (
     <div className="flex items-center justify-between px-6 py-3 bg-slate-950 border-b border-slate-700 flex-wrap gap-2">
 
-      {/* Left — title + screen name + camera switcher */}
+      {/* Left — logo + title + screen name + camera switcher */}
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-white font-bold text-lg tracking-tight">
-          Smart Audience Analysis
-        </span>
+        {/* Company logo + product branding */}
+        <div className="flex items-center gap-2.5">
+          <img src="/logo-main.png" alt="SLS Logo" className="w-9 h-9 rounded-full" />
+          <div className="flex flex-col leading-tight">
+            <span className="text-white font-bold text-base tracking-tight">Smart Audience Analysis</span>
+            <span className="text-[10px] text-blue-400 font-medium tracking-widest uppercase">Powered by SLS</span>
+          </div>
+        </div>
         {screenName && (
           <span className="text-slate-400 text-sm hidden sm:inline">{screenName}</span>
         )}

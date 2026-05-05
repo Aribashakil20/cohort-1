@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import * as faceapi from "face-api.js";
 import { AD_LIBRARY, resolveAd } from "./adLibrary";
+import AdRecommendation from "./AdRecommendation";
 
 const MODEL_URL        = "/models";
 const GENDER_THRESHOLD = 0.60;
@@ -412,26 +413,16 @@ export default function BrowserCamera({ onClose }) {
                 <GenderBar malePct={stats.malePct} femalePct={stats.femalePct} />
               </div>
 
-              {/* Ad Recommendation — rich card */}
-              {stats.ad && (
-                <div className="rounded-xl p-3 md:p-4 mb-4 md:mb-5 border" style={{ background: `${stats.ad.color}12`, borderColor: `${stats.ad.color}30` }}>
-                  <div className="text-xs uppercase tracking-widest mb-2" style={{ color: stats.ad.color }}>Now Showing</div>
-                  <div className="flex items-start gap-3">
-                    <span className="text-3xl">{stats.ad.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-white font-bold text-sm">{stats.ad.brand}</div>
-                      <div className="text-slate-300 text-xs italic mt-0.5">"{stats.ad.headline}"</div>
-                      <div className="text-slate-500 text-xs mt-1">{stats.ad.description}</div>
-                    </div>
-                  </div>
-                  <div className="mt-3 pt-3 border-t border-slate-700/50 text-xs text-slate-400">
-                    Targeting <span className="text-slate-200 font-medium">{stats.ad.target}</span> · {stats.total} {stats.total === 1 ? "person" : "people"} in frame
-                  </div>
-                  {stats.moodOverride && (
-                    <div className="mt-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-1">
-                      ⚡ Mood override — switched to wellness ad
-                    </div>
-                  )}
+              {/* Ad Recommendation — full visual display */}
+              {stats && (
+                <div className="mb-4 md:mb-5">
+                  <AdRecommendation
+                    ageGroup={stats.dominantAge}
+                    crowdGender={stats.crowdGender}
+                    ageConfident={stats.ageConfident}
+                    emotion={stats.dominantExpr}
+                    qualityScore={null}
+                  />
                 </div>
               )}
 

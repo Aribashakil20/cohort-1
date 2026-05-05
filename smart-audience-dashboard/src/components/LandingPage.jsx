@@ -73,7 +73,7 @@ function MetricCard({ label, value, unit, color, data, sub }) {
 
 function FeatureCard({ icon, title, desc }) {
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-indigo-500/40 transition-colors duration-300">
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-blue-500/40 transition-colors duration-300">
       <div className="text-3xl mb-4">{icon}</div>
       <div className="text-white font-semibold mb-2">{title}</div>
       <div className="text-slate-400 text-sm leading-relaxed">{desc}</div>
@@ -84,7 +84,7 @@ function FeatureCard({ icon, title, desc }) {
 function Step({ n, title, desc }) {
   return (
     <div className="flex gap-5">
-      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-bold text-sm">
+      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-sm">
         {n}
       </div>
       <div>
@@ -146,10 +146,11 @@ export default function LandingPage({ onEnterDashboard }) {
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-xs font-bold tracking-tight">
-              SA
+            <img src="/logo-main.png" alt="SLS Logo" className="w-8 h-8 rounded-full" />
+            <div className="flex flex-col leading-tight">
+              <span className="font-semibold text-white tracking-tight text-sm">SmartAudience</span>
+              <span className="text-[9px] text-blue-400 font-medium tracking-widest uppercase">Powered by SLS</span>
             </div>
-            <span className="font-semibold text-white tracking-tight">SmartAudience</span>
           </div>
 
           {/* Links */}
@@ -168,7 +169,8 @@ export default function LandingPage({ onEnterDashboard }) {
 
           <button
             onClick={onEnterDashboard}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            style={{ backgroundColor: "#1e6dd4" }}
           >
             Open Dashboard →
           </button>
@@ -179,15 +181,15 @@ export default function LandingPage({ onEnterDashboard }) {
       <section className="pt-36 pb-24 px-6 text-center">
         <div className="max-w-3xl mx-auto">
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 rounded-full px-4 py-1.5 text-indigo-400 text-sm mb-8">
-            <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse" />
+          <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 text-blue-400 text-sm mb-8">
+            <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
             Real-time AI audience analytics
           </div>
 
           {/* Headline */}
           <h1 className="text-5xl md:text-6xl font-bold leading-tight tracking-tight mb-6">
             Know your audience.<br />
-            <span className="text-indigo-400">Show the right ad.</span>
+            <span className="text-blue-400">Show the right ad.</span>
           </h1>
 
           {/* Subtext */}
@@ -201,13 +203,14 @@ export default function LandingPage({ onEnterDashboard }) {
           <div className="flex items-center justify-center gap-3 flex-wrap">
             <button
               onClick={() => setShowCamera(true)}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm flex items-center gap-2"
+              className="text-white font-semibold px-6 py-3 rounded-xl transition-colors text-sm flex items-center gap-2"
+              style={{ backgroundColor: "#1e6dd4" }}
             >
               <span>📷</span> Live camera
             </button>
             <button
               onClick={() => setShowVideoModal(true)}
-              className="bg-slate-800 hover:bg-slate-700 text-white font-semibold px-6 py-3 rounded-xl border border-slate-700 hover:border-indigo-500/40 transition-colors text-sm flex items-center gap-2"
+              className="bg-slate-800 hover:bg-slate-700 text-white font-semibold px-6 py-3 rounded-xl border border-slate-700 hover:border-blue-500/40 transition-colors text-sm flex items-center gap-2"
             >
               <span>🎥</span> Analyse a recording
             </button>
@@ -360,7 +363,7 @@ export default function LandingPage({ onEnterDashboard }) {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {recordings.map((rec, i) => (
-                <div key={rec.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col gap-4 hover:border-indigo-500/30 transition-colors">
+                <div key={rec.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col gap-4 hover:border-blue-500/30 transition-colors">
 
                   {/* Title */}
                   <div className="flex items-start justify-between">
@@ -368,7 +371,7 @@ export default function LandingPage({ onEnterDashboard }) {
                       <div className="text-white font-semibold">Recording {i + 1}</div>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         <span className="text-slate-500 text-xs">📍</span>
-                        <span className="text-indigo-400 text-xs font-medium">{rec.location}</span>
+                        <span className="text-blue-400 text-xs font-medium">{rec.location}</span>
                       </div>
                     </div>
                     <span className="text-xs text-slate-600">{rec.duration}s · {rec.timestamp}</span>
@@ -447,7 +450,7 @@ export default function LandingPage({ onEnterDashboard }) {
                     </div>
 
                     {/* Ad recommendation */}
-                    <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-xl px-3 py-2.5 flex items-center gap-2">
+                    <div className="rounded-xl px-3 py-2.5 flex items-center gap-2 border" style={{ background: "#1e6dd415", borderColor: "#1e6dd440" }}>
                       <span className="text-xl">{AD_ICONS[rec.stats.adCategory] || "📢"}</span>
                       <div>
                         <div className="text-white text-xs font-semibold">{rec.stats.adCategory}</div>
@@ -464,7 +467,7 @@ export default function LandingPage({ onEnterDashboard }) {
               {/* Add another recording */}
               <button
                 onClick={() => setShowVideoModal(true)}
-                className="bg-slate-900/50 border border-dashed border-slate-700 hover:border-indigo-500/40 rounded-2xl p-5 flex flex-col items-center justify-center gap-3 text-slate-500 hover:text-slate-300 transition-all min-h-[200px]"
+                className="bg-slate-900/50 border border-dashed border-slate-700 hover:border-blue-500/40 rounded-2xl p-5 flex flex-col items-center justify-center gap-3 text-slate-500 hover:text-slate-300 transition-all min-h-[200px]"
               >
                 <span className="text-3xl">＋</span>
                 <span className="text-sm font-medium">Add recording</span>
@@ -476,7 +479,7 @@ export default function LandingPage({ onEnterDashboard }) {
 
       {/* ── CTA banner ─────────────────────────────────────────────────────── */}
       <section className="py-16 px-6">
-        <div className="max-w-3xl mx-auto text-center bg-indigo-600/10 border border-indigo-500/20 rounded-3xl px-8 py-14">
+        <div className="max-w-3xl mx-auto text-center rounded-3xl px-8 py-14 border" style={{ background: "#1e6dd412", borderColor: "#1e6dd435" }}>
           <h2 className="text-3xl font-bold mb-4">See it live</h2>
           <p className="text-slate-400 mb-8 max-w-md mx-auto text-sm leading-relaxed">
             Test right now with your device camera — no install, no signup.
@@ -485,7 +488,8 @@ export default function LandingPage({ onEnterDashboard }) {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
               onClick={() => setShowCamera(true)}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-8 py-3 rounded-xl transition-colors flex items-center gap-2"
+              className="text-white font-semibold px-8 py-3 rounded-xl transition-colors flex items-center gap-2"
+              style={{ backgroundColor: "#1e6dd4" }}
             >
               <span>📷</span> Test with your camera
             </button>
@@ -503,8 +507,11 @@ export default function LandingPage({ onEnterDashboard }) {
       <footer className="border-t border-slate-800/60 py-10 px-6">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 bg-indigo-600 rounded flex items-center justify-center text-xs font-bold">SA</div>
-            <span className="text-slate-400 text-sm">SmartAudience</span>
+            <img src="/logo-main.png" alt="SLS Logo" className="w-6 h-6 rounded-full" />
+            <div className="flex flex-col leading-tight">
+              <span className="text-slate-400 text-sm">SmartAudience</span>
+              <span className="text-[9px] text-blue-400 tracking-widest uppercase">Powered by SLS</span>
+            </div>
           </div>
           <div className="text-slate-600 text-xs">
             Built with InsightFace · FerPlus · FastAPI · React · Recharts

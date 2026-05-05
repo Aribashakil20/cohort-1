@@ -39,7 +39,9 @@ import AdRecommendation from "./components/AdRecommendation";
 import DwellChart       from "./components/DwellChart";
 import EmotionChart     from "./components/EmotionChart";
 import AnalyticsPage    from "./components/AnalyticsPage";
+import MultiCameraPage  from "./components/MultiCameraPage";
 import AdPerformancePage from "./components/AdPerformancePage";
+import AdDisplayScreen  from "./components/AdDisplayScreen";
 import SettingsPage      from "./components/SettingsPage";
 import AlertsPanel       from "./components/AlertsPanel";
 
@@ -86,24 +88,39 @@ const DEMO_SUMMARY = {
   avg_engagement_quality:   0.78,
 };
 
-// Generate 40 history points with slight random variation
-const _EMOTIONS = ["happiness", "happiness", "neutral", "surprise", "neutral", "happiness"];
-const DEMO_HISTORY = Array.from({ length: 40 }, (_, i) => {
-  const engRate = Math.min(1, Math.max(0, 0.55 + Math.cos(i / 5) * 0.2 + (Math.random() - 0.5) * 0.1));
-  const happyPct = Math.min(1, Math.max(0, 0.40 + Math.sin(i / 4) * 0.15 + (Math.random() - 0.5) * 0.1));
-  const qualScore = Math.min(1, engRate * (0.8 + happyPct * 0.7));
+// Generate 48 history points spread across today (every 30 min) with realistic variation
+const _EMOTIONS   = ["happiness", "happiness", "neutral", "surprise", "neutral", "happiness"];
+const _AD_CATS    = [
+  "Cars / Finance", "Gaming / Sports", "Fashion / Beauty", "General Ad",
+  "Lifestyle / Travel", "Healthcare / Insurance", "Skincare / Wellness",
+  "Health / Home Appliances", "Gaming / Sports", "Fashion / Beauty",
+  "General Ad", "Cars / Finance",
+];
+const _TODAY = new Date(); _TODAY.setHours(0, 0, 0, 0);
+const DEMO_HISTORY = Array.from({ length: 48 }, (_, i) => {
+  const hour       = Math.floor(i / 2);
+  const minute     = (i % 2) * 30;
+  const ts         = new Date(_TODAY); ts.setHours(hour, minute, 0, 0);
+  // Viewer pattern: low morning, peak midday + evening, low night
+  const peakFactor = hour >= 10 && hour <= 13 ? 1.4
+                   : hour >= 17 && hour <= 20 ? 1.3
+                   : hour >= 0  && hour <= 6  ? 0.3 : 1.0;
+  const engRate    = Math.min(1, Math.max(0, 0.55 + Math.cos(i / 5) * 0.2 + (Math.random() - 0.5) * 0.1));
+  const happyPct   = Math.min(1, Math.max(0, 0.40 + Math.sin(i / 4) * 0.15 + (Math.random() - 0.5) * 0.1));
+  const qualScore  = Math.min(1, engRate * (0.8 + happyPct * 0.7));
   return {
     id: i + 1,
     camera_id: "cam_01",
-    timestamp: new Date(Date.now() - (39 - i) * 10_000).toISOString(),
-    viewer_count:        Math.max(0, Math.round(2.5 + Math.sin(i / 4) * 1.5 + (Math.random() - 0.5))),
-    engagement_rate:     engRate,
-    dominant_emotion:    _EMOTIONS[i % _EMOTIONS.length],
-    emotion_happy_pct:   happyPct,
-    emotion_neutral_pct: Math.max(0, 0.35 - happyPct * 0.3),
+    timestamp: ts.toISOString(),
+    viewer_count:         Math.max(0, Math.round((2.5 + Math.sin(i / 4) * 1.5 + (Math.random() - 0.5)) * peakFactor)),
+    engagement_rate:      engRate,
+    dominant_ad:          _AD_CATS[i % _AD_CATS.length],
+    dominant_emotion:     _EMOTIONS[i % _EMOTIONS.length],
+    emotion_happy_pct:    happyPct,
+    emotion_neutral_pct:  Math.max(0, 0.35 - happyPct * 0.3),
     emotion_surprise_pct: Math.max(0, 0.10 + (Math.random() - 0.5) * 0.05),
     emotion_negative_pct: Math.max(0, 0.10 + (Math.random() - 0.5) * 0.05),
-    engagement_quality:  qualScore,
+    engagement_quality:   qualScore,
   };
 });
 
@@ -307,7 +324,8 @@ export default function App() {
                 </div>
                 <button
                   onClick={() => setBrowserCamActive(true)}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-2 shrink-0"
+                  className="text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors flex items-center gap-2 shrink-0"
+                  style={{ backgroundColor: "#1e6dd4" }}
                 >
                   📷 Use Browser Camera
                 </button>
@@ -354,7 +372,7 @@ export default function App() {
                 label="Unique Visitors"
                 value={uniqueVisitors}
                 icon="🪪"
-                highlight="text-indigo-400"
+                highlight="text-blue-400"
                 sub="since startup"
               />
             </div>
@@ -374,17 +392,24 @@ export default function App() {
               <AgeChart data={live} />
               <DwellChart sessions={dwell} />
               <AdRecommendation
-                adCategory={adCategory}
                 ageGroup={ageGroup}
-                gender={dominantGender}
-                emotion={dominantEmotion}
-                qualityScore={moodScore}
                 crowdGender={crowdGender}
                 ageConfident={ageConfident}
+                emotion={dominantEmotion}
+                qualityScore={moodScore}
               />
             </div>
 
           </div>
+        )}
+
+        {/* ══════════════ ALL CAMERAS TAB ══════════════ */}
+        {activeTab === "cameras" && (
+          <MultiCameraPage
+            demoMode={demoMode}
+            cameras={cameras}
+            onSelectCamera={(id) => { setActiveCameraId(id); setActiveTab("live"); }}
+          />
         )}
 
         {/* ══════════════ TODAY'S ANALYTICS TAB ══════════════ */}
@@ -395,12 +420,19 @@ export default function App() {
             dwell={dwell}
             cameraId={activeCameraId}
             exportUrl={exportUrl}
+            cameras={demoMode ? ["cam_01","cam_02","cam_03","cam_04"] : cameras}
+            demoMode={demoMode}
           />
         )}
 
         {/* ══════════════ AD PERFORMANCE TAB ══════════════ */}
         {activeTab === "ads" && (
           <AdPerformancePage history={history} />
+        )}
+
+        {/* ══════════════ AD GALLERY TAB ══════════════ */}
+        {activeTab === "adgallery" && (
+          <AdDisplayScreen />
         )}
 
         {/* ══════════════ ALERTS TAB ══════════════ */}

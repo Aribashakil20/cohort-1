@@ -8,11 +8,13 @@
  */
 
 const TABS = [
-  { id: "live",      label: "Live View",          icon: "📡" },
-  { id: "analytics", label: "Today's Analytics",  icon: "📈" },
-  { id: "ads",       label: "Ad Performance",     icon: "🎯" },
-  { id: "alerts",    label: "Alerts",             icon: "🔔" },
-  { id: "settings",  label: "Settings",           icon: "⚙️" },
+  { id: "live",       label: "Live View",          icon: "📡" },
+  { id: "analytics",  label: "Today's Analytics",  icon: "📈" },
+  { id: "cameras",    label: "All Cameras",        icon: "🎥" },
+  { id: "ads",        label: "Ad Performance",     icon: "🎯" },
+  { id: "adgallery",  label: "Ad Gallery",         icon: "🖼️" },
+  { id: "alerts",     label: "Alerts",             icon: "🔔" },
+  { id: "settings",   label: "Settings",           icon: "⚙️" },
 ];
 
 export default function TabBar({ activeTab, onTabChange, alertCount = 0 }) {
@@ -24,7 +26,7 @@ export default function TabBar({ activeTab, onTabChange, alertCount = 0 }) {
           onClick={() => onTabChange(tab.id)}
           className={`relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg whitespace-nowrap transition-colors
             ${activeTab === tab.id
-              ? "bg-slate-800 text-white border border-b-0 border-slate-700"
+              ? "bg-slate-800 text-white border border-b-0 border-blue-600/60"
               : "text-slate-500 hover:text-slate-300 hover:bg-slate-800/50"
             }`}
         >

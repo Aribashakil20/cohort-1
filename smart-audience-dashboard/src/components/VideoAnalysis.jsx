@@ -16,6 +16,7 @@ import {
   XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { AD_LIBRARY, resolveAd } from "./adLibrary";
+import AdRecommendation from "./AdRecommendation";
 
 const MODEL_URL    = "/models";
 const AGE_ORDER    = ["child", "youth", "adult", "middle_aged", "senior"];
@@ -492,23 +493,15 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
                 </div>
               </div>
 
-              {/* Overall ad recommendation */}
-              {result.stats?.ad && (
-                <div className="rounded-xl p-4 border" style={{ background: `${result.stats.ad.color}12`, borderColor: `${result.stats.ad.color}30` }}>
-                  <div className="text-xs uppercase tracking-widest mb-2" style={{ color: result.stats.ad.color }}>Overall Ad Recommendation</div>
-                  <div className="flex items-start gap-3">
-                    <span className="text-3xl">{result.stats.ad.icon}</span>
-                    <div>
-                      <div className="text-white font-bold">{result.stats.ad.brand}</div>
-                      <div className="text-slate-300 text-xs italic mt-0.5">"{result.stats.ad.headline}"</div>
-                      <div className="text-slate-500 text-xs mt-1">{result.stats.ad.description}</div>
-                    </div>
-                  </div>
-                  <div className="mt-3 text-xs text-slate-400">
-                    Targeting <span className="text-slate-200 font-medium">{result.stats.ad.target}</span>
-                    {result.stats.moodOverride && <span className="ml-2 text-amber-400">⚡ mood override</span>}
-                  </div>
-                </div>
+              {/* Overall ad recommendation — full visual display */}
+              {result.stats && (
+                <AdRecommendation
+                  ageGroup={result.stats.dominantAge}
+                  crowdGender={result.stats.crowdGender}
+                  ageConfident={result.stats.ageConfident}
+                  emotion={result.stats.dominantExpr}
+                  qualityScore={null}
+                />
               )}
 
               {/* Per-ad performance breakdown */}

@@ -1,114 +1,373 @@
 /**
- * AdRecommendation.jsx — Shows the current recommended ad category
- *
- * Purpose:
- *   This is the "output" of the whole system — based on who is watching
- *   right now (age + gender), the AI recommends what type of ad to show.
- *   This card displays that recommendation prominently.
- *
- * Examples of what it might show:
- *   "Gaming / Sports"      → mostly young males detected
- *   "Healthcare / Insurance" → mostly seniors detected
- *   "Fashion / Beauty"     → mostly young females detected
+ * AdRecommendation.jsx — Shows the current recommended brand ad
+ * with a visual ad display preview, and a secondary time-of-day ad slot.
  *
  * Props:
- *   adCategory    — string: the recommended ad type (from dominant_ad field)
- *   ageGroup      — string: the dominant age group (e.g. "adult", "youth")
+ *   ageGroup      — dominant age group ("adult", "youth", etc.)
+ *   crowdGender   — "male" | "female" | "mixed"
+ *   ageConfident  — bool: 60%+ crowd in one age group
+ *   emotion       — dominant emotion string
+ *   qualityScore  — 0-100 mood score
  */
 
-// Map ad categories to gradient + icon
-const CATEGORY_CONFIG = {
-  "Gaming / Sports":          { gradient: "from-blue-900 to-blue-700",    icon: "🎮" },
-  "Fashion / Beauty":         { gradient: "from-pink-900 to-pink-700",    icon: "👗" },
-  "Toys / Boys Games":        { gradient: "from-yellow-900 to-yellow-700",icon: "🚀" },
-  "Toys / Girls Games":       { gradient: "from-orange-900 to-orange-700",icon: "🎀" },
-  "Cars / Finance":           { gradient: "from-slate-700 to-slate-600",  icon: "🚗" },
-  "Lifestyle / Travel":       { gradient: "from-teal-900 to-teal-700",    icon: "✈️" },
-  "Health / Home Appliances": { gradient: "from-green-900 to-green-700",  icon: "🏠" },
-  "Skincare / Wellness":      { gradient: "from-purple-900 to-purple-700",icon: "💆" },
-  "Healthcare / Insurance":   { gradient: "from-red-900 to-red-800",      icon: "🏥" },
-  "General Ad":               { gradient: "from-slate-700 to-slate-600",  icon: "📢" },
-  "No audience":              { gradient: "from-slate-800 to-slate-700",  icon: "📺" },
-};
+import { useState, useEffect, useRef } from "react";
+import { resolveAdPool, resolveTimeAdPool } from "./adLibrary";
 
 const EMOTION_EMOJI = {
   happiness: "😊", surprise: "😮", neutral: "😐",
-  sadness: "😢", anger: "😠", disgust: "🤢", fear: "😨", contempt: "😒",
+  sadness: "😢", anger: "😠", disgust: "🤢", fear: "😨",
 };
 
-const NEGATIVE_EMOTIONS = new Set(["anger", "disgust", "contempt"]);
+// Brand-specific ad banner styles — simulates actual digital signage display
+const AD_BANNERS = {
+  "LEGO": {
+    bg: "linear-gradient(135deg, #f5c400 0%, #e3a800 100%)",
+    text: "#1a1a1a", sub: "#3a2800",
+    badge: "#e3a800", badgeText: "#1a1a1a",
+    pattern: "repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(0,0,0,0.04) 8px, rgba(0,0,0,0.04) 16px)",
+  },
+  "Barbie": {
+    bg: "linear-gradient(135deg, #ff69b4 0%, #e91e8c 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.8)",
+    badge: "#c2185b", badgeText: "#fff",
+    pattern: "radial-gradient(circle at 80% 20%, rgba(255,255,255,0.15) 0%, transparent 50%)",
+  },
+  "PlayStation 5": {
+    bg: "linear-gradient(135deg, #00439c 0%, #001a57 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.7)",
+    badge: "#0070cc", badgeText: "#fff",
+    pattern: "radial-gradient(ellipse at 70% 30%, rgba(0,112,255,0.3) 0%, transparent 60%)",
+  },
+  "Tanishq": {
+    bg: "linear-gradient(135deg, #b8860b 0%, #8b6508 50%, #d4a017 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.8)",
+    badge: "#8b6508", badgeText: "#ffd700",
+    pattern: "radial-gradient(circle at 30% 70%, rgba(255,215,0,0.2) 0%, transparent 50%)",
+  },
+  "Maruti Suzuki": {
+    bg: "linear-gradient(135deg, #1b5e20 0%, #0d3b12 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.75)",
+    badge: "#2e7d32", badgeText: "#fff",
+    pattern: "linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%)",
+  },
+  "MakeMyTrip": {
+    bg: "linear-gradient(135deg, #e84393 0%, #9c1ab1 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.8)",
+    badge: "#6a0080", badgeText: "#fff",
+    pattern: "radial-gradient(ellipse at 20% 80%, rgba(255,255,255,0.1) 0%, transparent 50%)",
+  },
+  "LG Electronics": {
+    bg: "linear-gradient(135deg, #a50034 0%, #6d0022 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.75)",
+    badge: "#c62828", badgeText: "#fff",
+    pattern: "radial-gradient(circle at 85% 15%, rgba(255,100,100,0.2) 0%, transparent 40%)",
+  },
+  "Lakme": {
+    bg: "linear-gradient(135deg, #880e4f 0%, #c2185b 60%, #f06292 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.85)",
+    badge: "#ad1457", badgeText: "#fff",
+    pattern: "radial-gradient(circle at 75% 25%, rgba(255,255,255,0.12) 0%, transparent 45%)",
+  },
+  "Apollo Hospitals": {
+    bg: "linear-gradient(135deg, #006064 0%, #00363a 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.75)",
+    badge: "#00838f", badgeText: "#fff",
+    pattern: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 50%)",
+  },
+  "LIC Insurance": {
+    bg: "linear-gradient(135deg, #e65100 0%, #bf360c 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.8)",
+    badge: "#bf360c", badgeText: "#ffe0b2",
+    pattern: "radial-gradient(ellipse at 60% 40%, rgba(255,200,100,0.15) 0%, transparent 55%)",
+  },
+  "Coca-Cola": {
+    bg: "linear-gradient(135deg, #c62828 0%, #8b0000 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.85)",
+    badge: "#b71c1c", badgeText: "#fff",
+    pattern: "radial-gradient(circle at 25% 75%, rgba(255,255,255,0.08) 0%, transparent 50%)",
+  },
+  "Himalaya Wellness": {
+    bg: "linear-gradient(135deg, #1b5e20 0%, #33691e 60%, #558b2f 100%)",
+    text: "#fff", sub: "rgba(255,255,255,0.8)",
+    badge: "#2e7d32", badgeText: "#f1f8e9",
+    pattern: "radial-gradient(circle at 80% 20%, rgba(255,255,255,0.1) 0%, transparent 45%)",
+  },
+};
 
-export default function AdRecommendation({ adCategory, ageGroup, gender, emotion, qualityScore, crowdGender, ageConfident }) {
-  const config   = CATEGORY_CONFIG[adCategory] ?? CATEGORY_CONFIG["General Ad"];
-  const gradient = config.gradient;
-  const icon     = config.icon;
+// Local ad image paths
+const AD_IMAGE_FILES = {
+  "Coca-Cola":         "/ads/cocacola.webp",
+  "LEGO":              "/ads/lego.jpg",
+  "Barbie":            "/ads/barbie.jpg",
+  "PlayStation 5":     "/ads/ps5.jpg",
+  "Tanishq":           "/ads/tanishq.jpg",
+  "Maruti Suzuki":     "/ads/maruti.jpg",
+  "MakeMyTrip":        "/ads/makemytrip.jpg",
+  "LG Electronics":    "/ads/lg.jpg",
+  "Lakme":             "/ads/lakme.jpg",
+  "Apollo Hospitals":  "/ads/apollo.jpg",
+  "LIC Insurance":     "/ads/lic.jpg",
+  "Himalaya Wellness": "/ads/himalaya.jpg",
+  "Nike":              "/ads/nike.jpg",
+  "boAt":              "/ads/boat.jpg",
+  "iPhone":            "/ads/iphone.jpg",
+  "Max Protein":       "/ads/maxprotien.jpg",
+  "Levi's":            "/ads/levis.jpg",
+  "Nykaa":             "/ads/nykaa.jpg",
+  "Myntra":            "/ads/myntra.jpg",
+  "Plum":              "/ads/plum.jpg",
+  "Magnum":            "/ads/magnum.jpg",
+  "Goibibo":           "/ads/goibibo.jpg",
+  "Amazon":            "/ads/amazon.jpg",
+  "Dabur":             "/ads/dabur.jpg",
+  "Lay's":             "/ads/lays.jpg",
+  "Dairy Milk":        "/ads/diarymilk.jpg",
+  "Netflix":           "/ads/netflix.jpg",
+  "Domino's":          "/ads/dominos.jpg",
+  "KFC":               "/ads/kfc.jpg",
+  "Subway":            "/ads/subway.jpg",
+  "Burger King":       "/ads/burgerking.jpg",
+  "Blinkit":           "/ads/blinkit.jpg",
+  "Nescafé":           "/ads/nescafe.jpg",
+  "Maggi":             "/ads/maggi.jpg",
+  "Zomato":            "/ads/zomato.jpg",
+  "Spotify":           "/ads/spotify.jpg",
+};
 
-  const emotionEmoji  = EMOTION_EMOJI[emotion] ?? "😐";
-  const isOverridden  = emotion && NEGATIVE_EMOTIONS.has(emotion);
-  const isMixedGender = crowdGender === "mixed";
-  const qualPct       = qualityScore ?? null;
+function AdBanner({ ad }) {
+  const style = AD_BANNERS[ad?.brand] ?? {
+    bg: `linear-gradient(135deg, ${ad?.color ?? "#334155"}cc, ${ad?.color ?? "#334155"}99)`,
+    text: "#fff", sub: "rgba(255,255,255,0.75)",
+    badge: ad?.color ?? "#334155", badgeText: "#fff",
+    pattern: "",
+  };
+
+  const imgSrc = AD_IMAGE_FILES[ad?.brand];
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImage = imgSrc && !imgFailed;
 
   return (
-    <div className={`bg-gradient-to-br ${gradient} rounded-xl p-5 border border-slate-600`}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-slate-300 text-sm font-medium">Recommended Ad</div>
+    <div
+      className="rounded-xl overflow-hidden border-2 shadow-lg"
+      style={{ borderColor: `${ad?.color ?? "#334155"}66` }}
+    >
+      {/* Top bar — "NOW ON AIR" */}
+      <div
+        className="flex items-center justify-between px-3 py-1.5"
+        style={{ background: "rgba(0,0,0,0.75)" }}
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-white/80 text-[10px] font-bold tracking-widest uppercase">Now On Air</span>
+        </div>
+        <span
+          className="text-[9px] font-semibold px-2 py-0.5 rounded-full"
+          style={{ background: style.badge, color: style.badgeText }}
+        >
+          {ad?.category}
+        </span>
+      </div>
+
+      {/* Main ad creative — real image if available, styled banner otherwise */}
+      {showImage ? (
+        <div className="relative">
+          <img
+            src={imgSrc}
+            alt={ad?.brand}
+            className="w-full object-cover"
+            style={{ maxHeight: "160px" }}
+            onError={() => setImgFailed(true)}
+          />
+        </div>
+      ) : (
+        <div
+          className="relative flex flex-col items-center justify-center px-6 py-6 min-h-[130px] text-center overflow-hidden"
+          style={{ background: style.bg }}
+        >
+          <div className="absolute inset-0 pointer-events-none" style={{ background: style.pattern }} />
+          <div className="text-5xl mb-2 drop-shadow-lg relative z-10">{ad?.icon ?? "📢"}</div>
+          <div className="text-2xl font-black tracking-tight leading-tight relative z-10 drop-shadow" style={{ color: style.text }}>
+            {ad?.brand}
+          </div>
+          <div className="text-sm italic mt-1 font-medium relative z-10" style={{ color: style.sub }}>
+            "{ad?.headline}"
+          </div>
+        </div>
+      )}
+
+      {/* Bottom bar — target info */}
+      <div
+        className="flex items-center justify-between px-3 py-1.5"
+        style={{ background: "rgba(0,0,0,0.75)" }}
+      >
+        <span className="text-slate-300 text-[10px]">Target: <span className="text-white font-medium">{ad?.target}</span></span>
+        <span className="text-slate-400 text-[10px] italic">"{ad?.headline}"</span>
+      </div>
+    </div>
+  );
+}
+
+const ROTATE_INTERVAL = 3000; // 3 seconds per ad
+
+export default function AdRecommendation({ ageGroup, crowdGender, ageConfident, emotion, qualityScore }) {
+  const pool     = resolveAdPool(crowdGender ?? "mixed", ageGroup ?? "adult", ageConfident ?? false, emotion ?? "neutral");
+  const timePool = resolveTimeAdPool();
+  const qualPct  = qualityScore ?? null;
+
+  // Time slot rotation state
+  const [timeIdx, setTimeIdx] = useState(0);
+  useEffect(() => {
+    if (timePool.length <= 1) return;
+    const t = setInterval(() => setTimeIdx(i => (i + 1) % timePool.length), 3000);
+    return () => clearInterval(t);
+  }, [timePool.length]);
+  const timeAd = timePool[timeIdx] ?? timePool[0];
+
+  const [idx,      setIdx]      = useState(0);
+  const [progress, setProgress] = useState(0);
+  const timerRef   = useRef(null);
+  const progressRef = useRef(null);
+
+  // Reset to first ad whenever the pool changes (demographics changed)
+  useEffect(() => {
+    setIdx(0);
+    setProgress(0);
+  }, [crowdGender, ageGroup, ageConfident, emotion]);
+
+  // Rotate through pool every ROTATE_INTERVAL ms
+  useEffect(() => {
+    if (pool.length <= 1) return;
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setIdx(i => (i + 1) % pool.length);
+      setProgress(0);
+    }, ROTATE_INTERVAL);
+    return () => clearInterval(timerRef.current);
+  }, [pool.length, crowdGender, ageGroup, ageConfident, emotion]);
+
+  // Progress bar tick every 100ms
+  useEffect(() => {
+    if (pool.length <= 1) return;
+    clearInterval(progressRef.current);
+    progressRef.current = setInterval(() => {
+      setProgress(p => Math.min(100, p + (100 / (ROTATE_INTERVAL / 100))));
+    }, 100);
+    return () => clearInterval(progressRef.current);
+  }, [idx, pool.length]);
+
+  const ad = pool[idx] ?? pool[0];
+  const moodOverride = ["angry", "disgusted", "fearful"].includes(emotion);
+
+  return (
+    <div className="flex flex-col gap-3">
+
+      {/* ── Header: label + rotation dots + badges ─────────────────── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="text-slate-300 text-sm font-medium">Recommended Ad</div>
+          {/* Dot indicators */}
+          {pool.length > 1 && (
+            <div className="flex gap-1">
+              {pool.map((_, i) => (
+                <span
+                  key={i}
+                  className="w-1.5 h-1.5 rounded-full transition-all duration-300"
+                  style={{ backgroundColor: i === idx ? (ad?.color ?? "#60a5fa") : "#475569" }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
         <div className="flex gap-1 flex-wrap justify-end">
-          {isOverridden && (
-            <span className="text-xs bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full">
-              Mood override
-            </span>
+          {moodOverride && (
+            <span className="text-xs bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full">Mood override</span>
           )}
-          {isMixedGender && (
-            <span className="text-xs bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 px-2 py-0.5 rounded-full">
-              Mixed gender
-            </span>
+          {crowdGender === "mixed" && !moodOverride && (
+            <span className="text-xs bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 px-2 py-0.5 rounded-full">Mixed gender</span>
           )}
-          {!ageConfident && (
-            <span className="text-xs bg-slate-500/20 text-slate-300 border border-slate-500/30 px-2 py-0.5 rounded-full">
-              Mixed age
+          {pool.length > 1 && (
+            <span className="text-xs bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full">
+              {idx + 1}/{pool.length} rotating
             </span>
           )}
         </div>
       </div>
 
-      {/* Icon + category name */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-3xl">{icon}</span>
-        <div className="text-white text-xl font-bold leading-tight">{adCategory ?? "—"}</div>
+      {/* ── Visual ad display banner ───────────────────────────────── */}
+      <AdBanner ad={ad} />
+
+      {/* ── Rotation progress bar ─────────────────────────────────── */}
+      {pool.length > 1 && (
+        <div className="w-full h-0.5 bg-slate-700 rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-none"
+            style={{ width: `${progress}%`, backgroundColor: ad?.color ?? "#60a5fa" }}
+          />
+        </div>
+      )}
+
+      {/* ── Description ───────────────────────────────────────────── */}
+      <div
+        className="rounded-lg px-3 py-2.5 border"
+        style={{ background: `${ad?.color ?? "#334155"}11`, borderColor: `${ad?.color ?? "#334155"}33` }}
+      >
+        <div className="text-slate-300 text-xs mb-1">{ad?.description}</div>
+        <div className="text-slate-500 text-[10px]">
+          Audience: <span className="text-slate-300 capitalize">{ageGroup ?? "—"}</span>
+          {crowdGender && crowdGender !== "—" && <span className="text-slate-300"> · {crowdGender}</span>}
+        </div>
       </div>
 
-      {/* Audience profile */}
-      <div className="text-slate-400 text-xs mb-2">
-        Audience:{" "}
-        <span className="text-slate-200 capitalize">{ageGroup ?? "—"}</span>
-        {gender && gender !== "—" && (
-          <span className="text-slate-300"> · {gender}</span>
-        )}
-        {emotion && (
-          <span className="text-slate-300"> · {emotionEmoji} {emotion}</span>
-        )}
-      </div>
-
-      {/* Quality score bar */}
+      {/* ── Quality score bar ─────────────────────────────────────── */}
       {qualPct != null && (
-        <div className="mt-3 pt-3 border-t border-white/10">
-          <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-slate-400">Quality Score</span>
+        <div className="bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-700">
+          <div className="flex items-center justify-between text-xs mb-1.5">
+            <span className="text-slate-400">Ad Quality Score</span>
             <span className={`font-bold ${qualPct >= 70 ? "text-green-300" : qualPct >= 40 ? "text-yellow-300" : "text-red-300"}`}>
               {qualPct}/100
             </span>
           </div>
-          <div className="w-full h-1.5 bg-black/20 rounded-full overflow-hidden">
+          <div className="w-full h-1.5 bg-black/30 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-700"
-              style={{
-                width: `${qualPct}%`,
-                backgroundColor: qualPct >= 70 ? "#34d399" : qualPct >= 40 ? "#fbbf24" : "#ef4444",
-              }}
+              style={{ width: `${qualPct}%`, backgroundColor: qualPct >= 70 ? "#34d399" : qualPct >= 40 ? "#fbbf24" : "#ef4444" }}
             />
           </div>
         </div>
       )}
+
+      {/* ── Time-of-day slot ad ────────────────────────────────────── */}
+      {timeAd && (
+        <div className="rounded-xl overflow-hidden border" style={{ borderColor: `${timeAd.color}44` }}>
+          {/* Image if available */}
+          {AD_IMAGE_FILES[timeAd.brand] && (
+            <img src={AD_IMAGE_FILES[timeAd.brand]} alt={timeAd.brand}
+              className="w-full object-cover" style={{ maxHeight: "80px" }}
+              onError={e => { e.target.style.display = "none"; }}
+            />
+          )}
+          <div className="flex items-center gap-3 px-3 py-2" style={{ background: `${timeAd.color}15` }}>
+            <span className="text-xl">{timeAd.icon}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-white text-xs font-semibold">{timeAd.brand}</span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: `${timeAd.color}33`, color: timeAd.color }}>
+                  Time Slot
+                </span>
+                {timePool.length > 1 && (
+                  <div className="flex gap-0.5 ml-auto">
+                    {timePool.map((_, i) => (
+                      <span key={i} className="w-1 h-1 rounded-full" style={{ backgroundColor: i === timeIdx ? timeAd.color : "#475569" }} />
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="text-slate-400 text-[10px] truncate">"{timeAd.headline}"</div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
