@@ -359,6 +359,7 @@ export default function App() {
                   ageConfident={ageConfident}
                   emotion={dominantEmotion}
                   qualityScore={moodScore}
+                  hero
                 />
               </div>
             </div>
