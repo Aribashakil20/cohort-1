@@ -346,6 +346,23 @@ export default function App() {
               </div>
             )}
 
+            {/* Row 0: Ad Recommendation hero — full width, top of page */}
+            <div className="rounded-2xl border border-blue-500/30 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-1 shadow-lg shadow-blue-500/5">
+              <div className="rounded-xl overflow-hidden">
+                <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                  <span className="text-blue-400 text-xs font-semibold uppercase tracking-widest">Now Showing — AI-Selected Ad</span>
+                </div>
+                <AdRecommendation
+                  ageGroup={ageGroup}
+                  crowdGender={crowdGender}
+                  ageConfident={ageConfident}
+                  emotion={dominantEmotion}
+                  qualityScore={moodScore}
+                />
+              </div>
+            </div>
+
             {/* Row 1: 9 summary stat cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-3">
               <StatCard label="Viewers Now"       value={viewers}          icon="👥" highlight="text-green-400"  sub="current snapshot" />
@@ -387,17 +404,10 @@ export default function App() {
             {/* Row 3: History line chart */}
             <HistoryChart history={history} />
 
-            {/* Row 4: Age breakdown + Dwell chart + Ad recommendation */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Row 4: Age breakdown + Dwell chart */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <AgeChart data={live} />
               <DwellChart sessions={dwell} />
-              <AdRecommendation
-                ageGroup={ageGroup}
-                crowdGender={crowdGender}
-                ageConfident={ageConfident}
-                emotion={dominantEmotion}
-                qualityScore={moodScore}
-              />
             </div>
 
           </div>
