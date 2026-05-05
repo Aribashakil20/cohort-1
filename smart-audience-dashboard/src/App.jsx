@@ -139,7 +139,7 @@ export default function App() {
   const [showLanding,      setShowLanding]      = useState(true);
   const [connected,        setConnected]        = useState(false);
   const [lastUpdate,       setLastUpdate]       = useState(null);
-  const [demoMode,         setDemoMode]         = useState(false);
+  const [demoMode,         setDemoMode]         = useState(true);
   const [browserCamActive, setBrowserCamActive] = useState(false);
   const [browserCamLive,   setBrowserCamLive]   = useState(null);
   const [activeTab,      setActiveTab]      = useState("live");

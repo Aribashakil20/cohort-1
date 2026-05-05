@@ -3,7 +3,27 @@
  * Shown before the user enters the dashboard.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+
+function useCountUp(target, duration = 1200) {
+  const [count, setCount] = useState(0);
+  const raf = useRef(null);
+  const start = useRef(null);
+  const run = useCallback(() => {
+    const step = (ts) => {
+      if (!start.current) start.current = ts;
+      const pct = Math.min((ts - start.current) / duration, 1);
+      setCount(Math.round(pct * target));
+      if (pct < 1) raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+  }, [target, duration]);
+  useEffect(() => {
+    run();
+    return () => cancelAnimationFrame(raf.current);
+  }, [run]);
+  return count;
+}
 import {
   AreaChart, Area, LineChart, Line,
   ResponsiveContainer, Tooltip
@@ -57,6 +77,7 @@ function Sparkline({ data, color }) {
 }
 
 function MetricCard({ label, value, unit, color, data, sub }) {
+  const animated = useCountUp(Number(value) || 0, 1400);
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -64,7 +85,7 @@ function MetricCard({ label, value, unit, color, data, sub }) {
         <span className="text-xs text-slate-600">{sub}</span>
       </div>
       <div className="text-3xl font-bold" style={{ color }}>
-        {value}<span className="text-lg font-normal text-slate-500 ml-1">{unit}</span>
+        {animated}<span className="text-lg font-normal text-slate-500 ml-1">{unit}</span>
       </div>
       <Sparkline data={data} color={color} />
     </div>

@@ -1,24 +1,26 @@
 /**
  * StatusBar.jsx — Top bar: title, camera badge, demo toggle, connection status
- *
- * Props:
- *   connected      — boolean: is the backend reachable?
- *   wsConnected    — boolean: WebSocket real-time connection status
- *   lastUpdate     — Date or null: when we last got fresh data
- *   cameraId       — string: currently active camera id
- *   cameras        — string[]: list of available camera ids (for switcher)
- *   onCameraChange — function(id): called when user picks a different camera
- *   screenName     — string: user-defined location label
- *   demoMode       — boolean: is demo mode on?
- *   onToggleDemo   — function: called when user clicks the demo button
  */
+
+import { useState, useEffect } from "react";
+
+function useLiveSince() {
+  const [startTime] = useState(() => Date.now());
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - startTime) / 60000)), 10000);
+    return () => clearInterval(id);
+  }, [startTime]);
+  return elapsed;
+}
 
 export default function StatusBar({
   connected, wsConnected, lastUpdate,
   cameraId, cameras = [], onCameraChange,
   screenName, demoMode, onToggleDemo,
 }) {
-  const timeStr = lastUpdate ? lastUpdate.toLocaleTimeString() : "—";
+  const timeStr  = lastUpdate ? lastUpdate.toLocaleTimeString() : "—";
+  const minAlive = useLiveSince();
 
   return (
     <div className="flex items-center justify-between px-6 py-3 bg-slate-950 border-b border-slate-700 flex-wrap gap-2">
@@ -104,6 +106,9 @@ export default function StatusBar({
         </div>
 
         <span className="text-slate-500 hidden sm:inline">Updated: {timeStr}</span>
+        <span className="text-slate-600 hidden sm:inline text-xs">
+          Live {minAlive < 1 ? "just now" : `${minAlive} min`}
+        </span>
       </div>
     </div>
   );
