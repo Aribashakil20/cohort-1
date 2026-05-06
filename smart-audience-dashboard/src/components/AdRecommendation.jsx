@@ -398,50 +398,42 @@ export default function AdRecommendation({ ageGroup, crowdGender, ageConfident, 
 
       {/* ── Time-of-day slot ad ────────────────────────────────────── */}
       {timeAd && (
-        <div className="rounded-xl overflow-hidden border-2 relative" style={{ borderColor: `${timeAd.color}55` }}>
+        <div style={{ width: "100%", borderRadius: "12px", overflow: "hidden", border: `2px solid ${timeAd.color}55`, position: "relative" }}>
 
-          {/* Header label */}
-          <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/80">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: timeAd.color }} />
-              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: timeAd.color }}>Time Slot Ad</span>
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px", background: "rgba(15,23,42,0.9)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: timeAd.color, display: "inline-block", animation: "pulse 2s infinite" }} />
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: timeAd.color }}>Time Slot Ad</span>
             </div>
             {timePool.length > 1 && (
-              <div className="flex gap-1">
+              <div style={{ display: "flex", gap: 4 }}>
                 {timePool.map((_, i) => (
-                  <span key={i} className="w-1.5 h-1.5 rounded-full transition-all" style={{ backgroundColor: i === timeIdx ? timeAd.color : "#475569" }} />
+                  <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: i === timeIdx ? timeAd.color : "#475569", display: "inline-block" }} />
                 ))}
               </div>
             )}
           </div>
 
-          {/* Full-width image */}
+          {/* Image — explicit 100% width */}
           {AD_IMAGE_FILES[timeAd.brand] ? (
-            <div className="relative">
+            <div style={{ position: "relative", width: "100%", height: "220px" }}>
               <img
                 src={AD_IMAGE_FILES[timeAd.brand]}
                 alt={timeAd.brand}
-                className="w-full object-cover"
-                style={{ height: "200px" }}
-                onError={e => { e.target.style.display = "none"; }}
+                style={{ display: "block", width: "100%", height: "220px", objectFit: "cover" }}
+                onError={e => { e.target.parentElement.style.display = "none"; }}
               />
-              {/* Overlay */}
-              <div
-                className="absolute bottom-0 left-0 right-0 px-4 py-3"
-                style={{ background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%)" }}
-              >
-                <div className="text-white text-base font-black">{timeAd.brand}</div>
-                <div className="text-slate-300 text-xs italic">"{timeAd.headline}"</div>
+              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 16px", background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }}>
+                <div style={{ color: "#fff", fontSize: 16, fontWeight: 900 }}>{timeAd.brand}</div>
+                <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontStyle: "italic" }}>"{timeAd.headline}"</div>
               </div>
             </div>
           ) : (
-            <div
-              className="w-full flex flex-col items-center justify-center relative overflow-hidden"
-              style={{ height: "200px", background: `linear-gradient(135deg, ${timeAd.color}cc, ${timeAd.color}88)` }}
-            >
-              <div className="text-5xl mb-2">{timeAd.icon}</div>
-              <div className="text-white text-xl font-black">{timeAd.brand}</div>
-              <div className="text-white/70 text-sm italic mt-1">"{timeAd.headline}"</div>
+            <div style={{ width: "100%", height: "220px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: `linear-gradient(135deg, ${timeAd.color}cc, ${timeAd.color}88)` }}>
+              <div style={{ fontSize: 48, marginBottom: 8 }}>{timeAd.icon}</div>
+              <div style={{ color: "#fff", fontSize: 20, fontWeight: 900 }}>{timeAd.brand}</div>
+              <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, fontStyle: "italic", marginTop: 4 }}>"{timeAd.headline}"</div>
             </div>
           )}
         </div>
