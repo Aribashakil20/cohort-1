@@ -281,155 +281,154 @@ export default function BrowserCamera({ onClose }) {
         </button>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+      {/* Body — 2 column: left=camera+ads, right=stats */}
+      <div className="flex-1 flex flex-row overflow-hidden min-h-0">
 
-        {/* Camera feed — fixed height on mobile so stats don't push it off screen */}
-        <div className="relative bg-black flex items-center justify-center h-[42vh] md:h-auto md:flex-1 shrink-0">
-          {phase === "loading" && (
-            <div className="text-center">
-              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <div className="text-slate-400 text-sm">Loading AI models...</div>
-              <div className="text-slate-600 text-xs mt-1">First time only — then instant</div>
-            </div>
-          )}
-          {phase === "cam_permission" && (
-            <div className="text-center px-8">
-              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <div className="text-slate-300 text-sm font-semibold mb-1">Waiting for camera permission</div>
-              <div className="text-slate-500 text-xs">Click "Allow" when your browser asks</div>
-            </div>
-          )}
-          {phase === "model_error" && (
-            <div className="text-center px-8 max-w-xs">
-              <div className="text-4xl mb-3">⚠️</div>
-              <div className="text-white font-semibold mb-2">Could not load AI models</div>
-              <div className="text-slate-400 text-sm mb-4">Check your internet connection and try again.</div>
-              <button
-                onClick={() => window.location.reload()}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-5 py-2 rounded-lg transition-colors"
-              >Reload page</button>
-            </div>
-          )}
-          {phase === "cam_error" && (
-            <div className="text-center px-8 max-w-xs">
-              <div className="text-4xl mb-3">📷</div>
-              {camError === "permission" && <>
-                <div className="text-white font-semibold mb-2">Camera access blocked</div>
-                <div className="text-slate-400 text-sm mb-3">
-                  Your browser blocked the camera. To fix it:
-                </div>
-                <ol className="text-slate-400 text-xs text-left space-y-1.5 mb-4 list-decimal list-inside">
-                  <li>Click the <strong className="text-slate-300">camera icon</strong> in the address bar</li>
-                  <li>Select <strong className="text-slate-300">Always allow</strong></li>
-                  <li>Click the button below</li>
-                </ol>
-              </>}
-              {camError === "notfound" && <>
-                <div className="text-white font-semibold mb-2">No camera found</div>
-                <div className="text-slate-400 text-sm mb-4">No camera was detected on this device. Plug in a webcam and try again.</div>
-              </>}
-              {camError === "inuse" && <>
-                <div className="text-white font-semibold mb-2">Camera is in use</div>
-                <div className="text-slate-400 text-sm mb-4">Another app is using the camera. Close it (e.g. Zoom, Teams) and try again.</div>
-              </>}
-              {camError === "unknown" && <>
-                <div className="text-white font-semibold mb-2">Camera error</div>
-                <div className="text-slate-400 text-sm mb-4">Could not start the camera. Make sure this page is served over HTTPS and try again.</div>
-              </>}
-              <button
-                onClick={startCamera}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-5 py-2 rounded-lg transition-colors"
-              >Try again</button>
-            </div>
-          )}
-          <video
-            ref={videoRef}
-            autoPlay playsInline muted
-            className={`w-full h-full object-cover ${running ? "" : "hidden"}`}
-            style={{ transform: "scaleX(-1)" }}
-          />
-          <canvas
-            ref={canvasRef}
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ transform: "scaleX(-1)" }}
-          />
-          {running && !stats && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-slate-400 text-xs bg-slate-900/80 px-3 py-1 rounded-full">
-              Position your face in the camera
-            </div>
-          )}
+        {/* ── LEFT: Camera feed + Ad banners ── */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+
+          {/* Camera feed */}
+          <div className="relative bg-black flex items-center justify-center" style={{ height: "45%" }}>
+            {phase === "loading" && (
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <div className="text-slate-400 text-sm">Loading AI models...</div>
+                <div className="text-slate-600 text-xs mt-1">First time only — then instant</div>
+              </div>
+            )}
+            {phase === "cam_permission" && (
+              <div className="text-center px-8">
+                <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <div className="text-slate-300 text-sm font-semibold mb-1">Waiting for camera permission</div>
+                <div className="text-slate-500 text-xs">Click "Allow" when your browser asks</div>
+              </div>
+            )}
+            {phase === "model_error" && (
+              <div className="text-center px-8 max-w-xs">
+                <div className="text-4xl mb-3">⚠️</div>
+                <div className="text-white font-semibold mb-2">Could not load AI models</div>
+                <div className="text-slate-400 text-sm mb-4">Check your internet connection and try again.</div>
+                <button onClick={() => window.location.reload()} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-5 py-2 rounded-lg transition-colors">Reload page</button>
+              </div>
+            )}
+            {phase === "cam_error" && (
+              <div className="text-center px-8 max-w-xs">
+                <div className="text-4xl mb-3">📷</div>
+                {camError === "permission" && <>
+                  <div className="text-white font-semibold mb-2">Camera access blocked</div>
+                  <div className="text-slate-400 text-sm mb-3">Your browser blocked the camera. To fix it:</div>
+                  <ol className="text-slate-400 text-xs text-left space-y-1.5 mb-4 list-decimal list-inside">
+                    <li>Click the <strong className="text-slate-300">camera icon</strong> in the address bar</li>
+                    <li>Select <strong className="text-slate-300">Always allow</strong></li>
+                    <li>Click the button below</li>
+                  </ol>
+                </>}
+                {camError === "notfound" && <>
+                  <div className="text-white font-semibold mb-2">No camera found</div>
+                  <div className="text-slate-400 text-sm mb-4">No camera was detected. Plug in a webcam and try again.</div>
+                </>}
+                {camError === "inuse" && <>
+                  <div className="text-white font-semibold mb-2">Camera is in use</div>
+                  <div className="text-slate-400 text-sm mb-4">Another app is using the camera. Close it and try again.</div>
+                </>}
+                {camError === "unknown" && <>
+                  <div className="text-white font-semibold mb-2">Camera error</div>
+                  <div className="text-slate-400 text-sm mb-4">Could not start the camera. Make sure this page is served over HTTPS.</div>
+                </>}
+                <button onClick={startCamera} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-5 py-2 rounded-lg transition-colors">Try again</button>
+              </div>
+            )}
+            <video
+              ref={videoRef} autoPlay playsInline muted
+              className={`w-full h-full object-cover ${running ? "" : "hidden"}`}
+              style={{ transform: "scaleX(-1)" }}
+            />
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ transform: "scaleX(-1)" }}
+            />
+            {running && !stats && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-slate-400 text-xs bg-slate-900/80 px-3 py-1 rounded-full">
+                Position your face in the camera
+              </div>
+            )}
+          </div>
+
+          {/* Ad banners — full width of left column */}
+          <div className="flex-1 overflow-y-auto bg-slate-950 p-4">
+            {stats ? (
+              <AdRecommendation
+                ageGroup={stats.dominantAge}
+                crowdGender={stats.crowdGender}
+                ageConfident={stats.ageConfident}
+                emotion={stats.dominantExpr}
+                qualityScore={null}
+                hero
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-600 text-sm">
+                {running ? "Looking for faces..." : "Starting camera..."}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Stats panel — scrollable, 2-col grid on mobile, single col sidebar on desktop */}
-        <div className="w-full md:w-80 bg-slate-900 border-t md:border-t-0 md:border-l border-slate-800 overflow-y-auto shrink-0 flex-1 md:flex-none">
+        {/* ── RIGHT: Stats sidebar ── */}
+        <div className="w-72 bg-slate-900 border-l border-slate-800 overflow-y-auto shrink-0">
           {!stats ? (
-            <div className="flex items-center justify-center h-full min-h-[8rem] text-slate-600 text-sm p-6 text-center">
-              {running ? "Looking for faces..." : "Starting camera..."}
+            <div className="flex items-center justify-center h-full text-slate-600 text-sm p-6 text-center">
+              {running ? "Analysing..." : "Starting..."}
             </div>
           ) : (
-            <div className="p-4 md:p-5">
+            <div className="p-4 space-y-5">
 
-              {/* ── Mobile: 2-column stat cards, then full-width sections ── */}
-              {/* Audience row */}
-              <div className="grid grid-cols-3 gap-2 mb-4 md:hidden">
-                <div className="bg-slate-800 rounded-xl p-3 text-center">
-                  <div className="text-green-400 font-bold text-xl">{stats.total}</div>
-                  <div className="text-slate-500 text-xs mt-0.5">Viewers</div>
-                </div>
-                <div className="bg-slate-800 rounded-xl p-3 text-center">
-                  <div className="text-purple-400 font-bold text-xl">{stats.avgAge}</div>
-                  <div className="text-slate-500 text-xs mt-0.5">Avg age</div>
-                </div>
-                <div className="bg-slate-800 rounded-xl p-3 text-center">
-                  <div className="text-indigo-400 font-bold text-sm leading-tight mt-0.5">{stats.dominantAge.replace("_", " ")}</div>
-                  <div className="text-slate-500 text-xs mt-0.5">Group</div>
-                </div>
-              </div>
-
-              {/* ── Desktop: row-style stat list ── */}
-              <div className="hidden md:block mb-5">
+              {/* Audience */}
+              <div>
                 <div className="text-slate-500 text-xs uppercase tracking-widest mb-3">Audience</div>
-                <StatRow label="Viewers detected" value={stats.total} color="text-green-400" />
-                <StatRow label="Average age"      value={`${stats.avgAge} years`} color="text-purple-400" />
-                <StatRow label="Age group"        value={stats.dominantAge.replace("_", " ")} color="text-indigo-400" />
+                <StatRow label="Viewers"    value={stats.total}                          color="text-green-400" />
+                <StatRow label="Avg age"    value={`${stats.avgAge} years`}              color="text-purple-400" />
+                <StatRow label="Age group"  value={stats.dominantAge.replace("_", " ")} color="text-indigo-400" />
               </div>
 
-              {/* Gender — shown on all sizes */}
-              <div className="mb-4 md:mb-5">
-                <div className="text-slate-500 text-xs uppercase tracking-widest mb-2 md:mb-3">Gender Split</div>
+              {/* Gender */}
+              <div>
+                <div className="text-slate-500 text-xs uppercase tracking-widest mb-2">Gender Split</div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-slate-400 text-xs md:text-sm">Crowd</span>
+                  <span className="text-slate-400 text-xs">Crowd</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                    stats.crowdGender === "male"
-                      ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
-                      : stats.crowdGender === "female"
-                      ? "bg-pink-500/20 text-pink-300 border-pink-500/30"
-                      : "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
-                  }`}>
-                    {stats.crowdGender === "mixed" ? "Mixed" : `${stats.crowdGender} majority`}
-                  </span>
+                    stats.crowdGender === "male"   ? "bg-blue-500/20 text-blue-300 border-blue-500/30" :
+                    stats.crowdGender === "female" ? "bg-pink-500/20 text-pink-300 border-pink-500/30" :
+                                                     "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
+                  }`}>{stats.crowdGender === "mixed" ? "Mixed" : `${stats.crowdGender} majority`}</span>
                 </div>
                 <GenderBar malePct={stats.malePct} femalePct={stats.femalePct} />
               </div>
 
-              {/* Ad Recommendation — full visual display */}
-              {stats && (
-                <div className="mb-4 md:mb-5">
-                  <AdRecommendation
-                    ageGroup={stats.dominantAge}
-                    crowdGender={stats.crowdGender}
-                    ageConfident={stats.ageConfident}
-                    emotion={stats.dominantExpr}
-                    qualityScore={null}
-                  />
+              {/* Expressions */}
+              <div>
+                <div className="text-slate-500 text-xs uppercase tracking-widest mb-2">
+                  Expressions · <span className="text-slate-400 normal-case tracking-normal capitalize">{EXPR_LABEL[stats.dominantExpr] || stats.dominantExpr}</span>
                 </div>
-              )}
+                <div className="space-y-1.5">
+                  {[
+                    { key: "happy",     color: "#34d399" },
+                    { key: "surprised", color: "#60a5fa" },
+                    { key: "neutral",   color: "#94a3b8" },
+                    { key: "angry",     color: "#f87171" },
+                    { key: "sad",       color: "#a78bfa" },
+                    { key: "disgusted", color: "#fb923c" },
+                    { key: "fearful",   color: "#facc15" },
+                  ].map(({ key, color }) => (
+                    <ExprBar key={key} label={key.charAt(0).toUpperCase() + key.slice(1)} value={(stats.exprTotals[key] || 0) / stats.total} color={color} />
+                  ))}
+                </div>
+              </div>
 
-              {/* Ad Performance this session */}
+              {/* Ad performance this session */}
               {Object.keys(adPerf).length > 0 && (
-                <div className="mb-4 md:mb-5">
-                  <div className="text-slate-500 text-xs uppercase tracking-widest mb-3">Ad performance · this session</div>
+                <div>
+                  <div className="text-slate-500 text-xs uppercase tracking-widest mb-3">Ad Performance · Session</div>
                   <div className="space-y-2">
                     {Object.entries(adPerf)
                       .sort((a, b) => b[1].totalViewers - a[1].totalViewers)
@@ -449,43 +448,13 @@ export default function BrowserCamera({ onClose }) {
                                 <div className="text-slate-500 text-xs">avg {avgV}/frame</div>
                               </div>
                             </div>
-                            <div className="text-slate-600 text-xs">
-                              {malePct}% male · {100 - malePct}% female · reached <span className="text-slate-400">{p.ad.reachDesc}</span>
-                            </div>
+                            <div className="text-slate-600 text-xs">{malePct}% male · {100 - malePct}% female</div>
                           </div>
                         );
                       })}
                   </div>
                 </div>
               )}
-
-              {/* Expressions */}
-              <div>
-                <div className="text-slate-500 text-xs uppercase tracking-widest mb-2 md:mb-3">
-                  Expressions <span className="text-slate-600 normal-case tracking-normal">· dominant: <span className="text-slate-400 capitalize">{EXPR_LABEL[stats.dominantExpr] || stats.dominantExpr}</span></span>
-                </div>
-                <div className="space-y-1.5">
-                  {[
-                    { key: "happy",     color: "#34d399" },
-                    { key: "surprised", color: "#60a5fa" },
-                    { key: "neutral",   color: "#94a3b8" },
-                    { key: "angry",     color: "#f87171" },
-                    { key: "sad",       color: "#a78bfa" },
-                    { key: "disgusted", color: "#fb923c" },
-                    { key: "fearful",   color: "#facc15" },
-                  ].map(({ key, color }) => {
-                    const val = (stats.exprTotals[key] || 0) / stats.total;
-                    return (
-                      <ExprBar
-                        key={key}
-                        label={key.charAt(0).toUpperCase() + key.slice(1)}
-                        value={val}
-                        color={color}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
 
             </div>
           )}
