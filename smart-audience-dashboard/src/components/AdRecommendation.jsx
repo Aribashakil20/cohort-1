@@ -398,33 +398,52 @@ export default function AdRecommendation({ ageGroup, crowdGender, ageConfident, 
 
       {/* ── Time-of-day slot ad ────────────────────────────────────── */}
       {timeAd && (
-        <div className="rounded-xl overflow-hidden border" style={{ borderColor: `${timeAd.color}44` }}>
-          {/* Image if available */}
-          {AD_IMAGE_FILES[timeAd.brand] && (
-            <img src={AD_IMAGE_FILES[timeAd.brand]} alt={timeAd.brand}
-              className="w-full object-cover" style={{ maxHeight: "80px" }}
-              onError={e => { e.target.style.display = "none"; }}
-            />
-          )}
-          <div className="flex items-center gap-3 px-3 py-2" style={{ background: `${timeAd.color}15` }}>
-            <span className="text-xl">{timeAd.icon}</span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-white text-xs font-semibold">{timeAd.brand}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: `${timeAd.color}33`, color: timeAd.color }}>
-                  Time Slot
-                </span>
-                {timePool.length > 1 && (
-                  <div className="flex gap-0.5 ml-auto">
-                    {timePool.map((_, i) => (
-                      <span key={i} className="w-1 h-1 rounded-full" style={{ backgroundColor: i === timeIdx ? timeAd.color : "#475569" }} />
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="text-slate-400 text-[10px] truncate">"{timeAd.headline}"</div>
+        <div className="rounded-xl overflow-hidden border-2 relative" style={{ borderColor: `${timeAd.color}55` }}>
+
+          {/* Header label */}
+          <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900/80">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: timeAd.color }} />
+              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: timeAd.color }}>Time Slot Ad</span>
             </div>
+            {timePool.length > 1 && (
+              <div className="flex gap-1">
+                {timePool.map((_, i) => (
+                  <span key={i} className="w-1.5 h-1.5 rounded-full transition-all" style={{ backgroundColor: i === timeIdx ? timeAd.color : "#475569" }} />
+                ))}
+              </div>
+            )}
           </div>
+
+          {/* Full-width image */}
+          {AD_IMAGE_FILES[timeAd.brand] ? (
+            <div className="relative">
+              <img
+                src={AD_IMAGE_FILES[timeAd.brand]}
+                alt={timeAd.brand}
+                className="w-full object-cover"
+                style={{ height: "200px" }}
+                onError={e => { e.target.style.display = "none"; }}
+              />
+              {/* Overlay */}
+              <div
+                className="absolute bottom-0 left-0 right-0 px-4 py-3"
+                style={{ background: "linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%)" }}
+              >
+                <div className="text-white text-base font-black">{timeAd.brand}</div>
+                <div className="text-slate-300 text-xs italic">"{timeAd.headline}"</div>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="w-full flex flex-col items-center justify-center relative overflow-hidden"
+              style={{ height: "200px", background: `linear-gradient(135deg, ${timeAd.color}cc, ${timeAd.color}88)` }}
+            >
+              <div className="text-5xl mb-2">{timeAd.icon}</div>
+              <div className="text-white text-xl font-black">{timeAd.brand}</div>
+              <div className="text-white/70 text-sm italic mt-1">"{timeAd.headline}"</div>
+            </div>
+          )}
         </div>
       )}
 
