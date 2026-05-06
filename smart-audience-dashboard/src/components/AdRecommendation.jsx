@@ -398,44 +398,23 @@ export default function AdRecommendation({ ageGroup, crowdGender, ageConfident, 
 
       {/* ── Time-of-day slot ad ────────────────────────────────────── */}
       {timeAd && (
-        <div style={{ width: "100%", borderRadius: "12px", overflow: "hidden", border: `2px solid ${timeAd.color}55`, position: "relative" }}>
-
-          {/* Header */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px", background: "rgba(15,23,42,0.9)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: timeAd.color, display: "inline-block", animation: "pulse 2s infinite" }} />
-              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: timeAd.color }}>Time Slot Ad</span>
+        <div className="w-full flex flex-col gap-1">
+          {/* Label row */}
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: timeAd.color }} />
+              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: timeAd.color }}>Time Slot Ad</span>
             </div>
             {timePool.length > 1 && (
-              <div style={{ display: "flex", gap: 4 }}>
+              <div className="flex gap-1">
                 {timePool.map((_, i) => (
-                  <span key={i} style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: i === timeIdx ? timeAd.color : "#475569", display: "inline-block" }} />
+                  <span key={i} className="w-1.5 h-1.5 rounded-full transition-all" style={{ backgroundColor: i === timeIdx ? timeAd.color : "#475569" }} />
                 ))}
               </div>
             )}
           </div>
-
-          {/* Image — explicit 100% width */}
-          {AD_IMAGE_FILES[timeAd.brand] ? (
-            <div style={{ position: "relative", width: "100%", height: "220px" }}>
-              <img
-                src={AD_IMAGE_FILES[timeAd.brand]}
-                alt={timeAd.brand}
-                style={{ display: "block", width: "100%", height: "220px", objectFit: "cover" }}
-                onError={e => { e.target.parentElement.style.display = "none"; }}
-              />
-              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "12px 16px", background: "linear-gradient(to top, rgba(0,0,0,0.85), transparent)" }}>
-                <div style={{ color: "#fff", fontSize: 16, fontWeight: 900 }}>{timeAd.brand}</div>
-                <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, fontStyle: "italic" }}>"{timeAd.headline}"</div>
-              </div>
-            </div>
-          ) : (
-            <div style={{ width: "100%", height: "220px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: `linear-gradient(135deg, ${timeAd.color}cc, ${timeAd.color}88)` }}>
-              <div style={{ fontSize: 48, marginBottom: 8 }}>{timeAd.icon}</div>
-              <div style={{ color: "#fff", fontSize: 20, fontWeight: 900 }}>{timeAd.brand}</div>
-              <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 13, fontStyle: "italic", marginTop: 4 }}>"{timeAd.headline}"</div>
-            </div>
-          )}
+          {/* Reuse same AdBanner — guaranteed identical width */}
+          <AdBanner ad={timeAd} hero={hero} />
         </div>
       )}
 
