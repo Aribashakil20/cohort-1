@@ -237,10 +237,12 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
   const [modelsReady,  setModelsReady]  = useState(false);
   const [modelError,   setModelError]   = useState(false);
   const [location,     setLocation]     = useState("");
-  const [mode,         setMode]         = useState("idle"); // idle|recording|stopping|processing|done|error
+  const [mode,         setMode]         = useState("idle"); // idle|preview|recording|stopping|processing|done|error
   const [progress,     setProgress]     = useState(0);
   const [recordingSec, setRecordingSec] = useState(0);
   const [result,       setResult]       = useState(null);
+  const [previewUrl,   setPreviewUrl]   = useState(null);
+  const [previewFile,  setPreviewFile]  = useState(null);
 
   const liveVideoRef = useRef(null);
   const streamRef    = useRef(null);
@@ -295,14 +297,25 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
     };
   }, []); // eslint-disable-line
 
-  // ── Upload ────────────────────────────────────────────────────────────────
-  const handleFileChange = useCallback(async (e) => {
+  // ── Upload — show preview first ───────────────────────────────────────────
+  const handleFileChange = useCallback((e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setMode("processing");
-    setProgress(0);
-    await processBlob(file);
-  }, []); // eslint-disable-line
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    setPreviewFile(file);
+    setMode("preview");
+    e.target.value = "";
+  }, [previewUrl]);
+
+  const handleAnalyseUploaded = useCallback(async () => {
+    if (!previewFile) return;
+    URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    await processBlob(previewFile);
+    setPreviewFile(null);
+  }, [previewFile, previewUrl]); // eslint-disable-line
 
   // ── Core processing ───────────────────────────────────────────────────────
   async function processBlob(blob) {
@@ -401,6 +414,34 @@ export default function VideoAnalysis({ onClose, onRecordingComplete, recordingI
                     </div>
                   </button>
                   <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={handleFileChange} />
+                </div>
+              )}
+
+              {/* Preview — show video before analysing */}
+              {mode === "preview" && previewUrl && (
+                <div className="space-y-3">
+                  <div className="text-slate-400 text-xs uppercase tracking-widest mb-1">Video Preview</div>
+                  <video
+                    src={previewUrl}
+                    controls
+                    className="w-full rounded-xl bg-black"
+                    style={{ maxHeight: "240px", objectFit: "contain" }}
+                  />
+                  <div className="text-slate-500 text-xs text-center">{previewFile?.name}</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); setPreviewFile(null); setMode("idle"); }}
+                      className="py-2.5 rounded-xl border border-slate-700 text-slate-400 hover:text-white text-sm transition-colors"
+                    >
+                      ← Choose different file
+                    </button>
+                    <button
+                      onClick={handleAnalyseUploaded}
+                      className="py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition-colors"
+                    >
+                      Analyse this video →
+                    </button>
+                  </div>
                 </div>
               )}
 
