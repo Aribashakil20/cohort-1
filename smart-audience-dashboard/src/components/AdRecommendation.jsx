@@ -270,65 +270,66 @@ function AdBanner({ ad, hero = false }) {
 const ROTATE_INTERVAL = 3000; // 3 seconds per ad
 
 export default function AdRecommendation({ ageGroup, crowdGender, ageConfident, emotion, qualityScore, hero = false }) {
-  const pool     = resolveAdPool(crowdGender ?? "mixed", ageGroup ?? "adult", ageConfident ?? false, emotion ?? "neutral");
+  const demoPool = resolveAdPool(crowdGender ?? "mixed", ageGroup ?? "adult", ageConfident ?? false, emotion ?? "neutral");
   const timePool = resolveTimeAdPool();
   const qualPct  = qualityScore ?? null;
 
-  // Time slot rotation state
-  const [timeIdx, setTimeIdx] = useState(0);
-  useEffect(() => {
-    if (timePool.length <= 1) return;
-    const t = setInterval(() => setTimeIdx(i => (i + 1) % timePool.length), 3000);
-    return () => clearInterval(t);
-  }, [timePool.length]);
-  const timeAd = timePool[timeIdx] ?? timePool[0];
+  // Merge demographic + time-slot into one pool, deduplicated by brand
+  const seen = new Set();
+  const combined = [...demoPool, ...timePool].filter(ad => {
+    if (seen.has(ad.brand)) return false;
+    seen.add(ad.brand);
+    return true;
+  });
 
   const [idx,      setIdx]      = useState(0);
   const [progress, setProgress] = useState(0);
-  const timerRef   = useRef(null);
+  const timerRef    = useRef(null);
   const progressRef = useRef(null);
 
-  // Reset to first ad whenever the pool changes (demographics changed)
+  // Reset when demographics change
   useEffect(() => {
     setIdx(0);
     setProgress(0);
   }, [crowdGender, ageGroup, ageConfident, emotion]);
 
-  // Rotate through pool every ROTATE_INTERVAL ms
+  // Rotate through combined pool
   useEffect(() => {
-    if (pool.length <= 1) return;
+    if (combined.length <= 1) return;
     clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
-      setIdx(i => (i + 1) % pool.length);
+      setIdx(i => (i + 1) % combined.length);
       setProgress(0);
     }, ROTATE_INTERVAL);
     return () => clearInterval(timerRef.current);
-  }, [pool.length, crowdGender, ageGroup, ageConfident, emotion]);
+  }, [combined.length, crowdGender, ageGroup, ageConfident, emotion]);
 
-  // Progress bar tick every 100ms
+  // Progress bar
   useEffect(() => {
-    if (pool.length <= 1) return;
+    if (combined.length <= 1) return;
     clearInterval(progressRef.current);
     progressRef.current = setInterval(() => {
       setProgress(p => Math.min(100, p + (100 / (ROTATE_INTERVAL / 100))));
     }, 100);
     return () => clearInterval(progressRef.current);
-  }, [idx, pool.length]);
+  }, [idx, combined.length]);
 
-  const ad = pool[idx] ?? pool[0];
-  const moodOverride = ["angry", "disgusted", "fearful"].includes(emotion);
+  const ad = combined[idx] ?? combined[0];
+  const isTimeSlot    = timePool.some(t => t.brand === ad?.brand) && !demoPool.some(d => d.brand === ad?.brand);
+  const moodOverride  = ["angry", "disgusted", "fearful"].includes(emotion);
 
   return (
     <div className="flex flex-col gap-3">
 
-      {/* ── Header: label + rotation dots + badges ─────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="text-slate-300 text-sm font-medium">Recommended Ad</div>
-          {/* Dot indicators */}
-          {pool.length > 1 && (
+          <div className="text-slate-300 text-sm font-medium">
+            {isTimeSlot ? "Time Slot Ad" : "Recommended Ad"}
+          </div>
+          {combined.length > 1 && (
             <div className="flex gap-1">
-              {pool.map((_, i) => (
+              {combined.map((_, i) => (
                 <span
                   key={i}
                   className="w-1.5 h-1.5 rounded-full transition-all duration-300"
@@ -339,25 +340,25 @@ export default function AdRecommendation({ ageGroup, crowdGender, ageConfident, 
           )}
         </div>
         <div className="flex gap-1 flex-wrap justify-end">
+          {isTimeSlot && (
+            <span className="text-xs bg-orange-500/20 text-orange-300 border border-orange-500/30 px-2 py-0.5 rounded-full">🕐 Time-based</span>
+          )}
           {moodOverride && (
             <span className="text-xs bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full">Mood override</span>
           )}
-          {crowdGender === "mixed" && !moodOverride && (
-            <span className="text-xs bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 px-2 py-0.5 rounded-full">Mixed gender</span>
-          )}
-          {pool.length > 1 && (
+          {combined.length > 1 && (
             <span className="text-xs bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full">
-              {idx + 1}/{pool.length} rotating
+              {idx + 1}/{combined.length} rotating
             </span>
           )}
         </div>
       </div>
 
-      {/* ── Visual ad display banner ───────────────────────────────── */}
+      {/* ── Single ad banner ────────────────────────────────────────── */}
       <AdBanner ad={ad} hero={hero} />
 
-      {/* ── Rotation progress bar ─────────────────────────────────── */}
-      {pool.length > 1 && (
+      {/* ── Progress bar ────────────────────────────────────────────── */}
+      {combined.length > 1 && (
         <div className="w-full h-0.5 bg-slate-700 rounded-full overflow-hidden">
           <div
             className="h-full rounded-full transition-none"
@@ -366,19 +367,22 @@ export default function AdRecommendation({ ageGroup, crowdGender, ageConfident, 
         </div>
       )}
 
-      {/* ── Description ───────────────────────────────────────────── */}
+      {/* ── Description ─────────────────────────────────────────────── */}
       <div
         className="rounded-lg px-3 py-2.5 border"
         style={{ background: `${ad?.color ?? "#334155"}11`, borderColor: `${ad?.color ?? "#334155"}33` }}
       >
         <div className="text-slate-300 text-xs mb-1">{ad?.description}</div>
         <div className="text-slate-500 text-[10px]">
-          Audience: <span className="text-slate-300 capitalize">{ageGroup ?? "—"}</span>
-          {crowdGender && crowdGender !== "—" && <span className="text-slate-300"> · {crowdGender}</span>}
+          {isTimeSlot
+            ? <span className="text-orange-300">Showing based on time of day</span>
+            : <>Audience: <span className="text-slate-300 capitalize">{ageGroup ?? "—"}</span>
+                {crowdGender && crowdGender !== "—" && <span className="text-slate-300"> · {crowdGender}</span>}</>
+          }
         </div>
       </div>
 
-      {/* ── Quality score bar ─────────────────────────────────────── */}
+      {/* ── Quality score ───────────────────────────────────────────── */}
       {qualPct != null && (
         <div className="bg-slate-800/60 rounded-lg px-3 py-2 border border-slate-700">
           <div className="flex items-center justify-between text-xs mb-1.5">
@@ -393,28 +397,6 @@ export default function AdRecommendation({ ageGroup, crowdGender, ageConfident, 
               style={{ width: `${qualPct}%`, backgroundColor: qualPct >= 70 ? "#34d399" : qualPct >= 40 ? "#fbbf24" : "#ef4444" }}
             />
           </div>
-        </div>
-      )}
-
-      {/* ── Time-of-day slot ad ────────────────────────────────────── */}
-      {timeAd && (
-        <div className="w-full flex flex-col gap-1">
-          {/* Label row */}
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: timeAd.color }} />
-              <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: timeAd.color }}>Time Slot Ad</span>
-            </div>
-            {timePool.length > 1 && (
-              <div className="flex gap-1">
-                {timePool.map((_, i) => (
-                  <span key={i} className="w-1.5 h-1.5 rounded-full transition-all" style={{ backgroundColor: i === timeIdx ? timeAd.color : "#475569" }} />
-                ))}
-              </div>
-            )}
-          </div>
-          {/* Reuse same AdBanner — guaranteed identical width */}
-          <AdBanner ad={timeAd} hero={hero} />
         </div>
       )}
 
