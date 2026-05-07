@@ -124,6 +124,28 @@ const DEMO_HISTORY = Array.from({ length: 48 }, (_, i) => {
   };
 });
 
+// Generate realistic demo alerts — engagement drops across the day
+const _ALERT_MSGS = [
+  "Engagement dropped below threshold — consider switching ad category",
+  "Low engagement detected — audience may be fatigued",
+  "Engagement rate critical — recommend high-energy ad format",
+  "Viewer attention declining — switch to motion-based creative",
+  "Engagement below 25% — peak hour ad rotation recommended",
+];
+const DEMO_ALERTS = Array.from({ length: 8 }, (_, i) => {
+  const hour    = [8, 9, 11, 12, 14, 16, 18, 20][i];
+  const ts      = new Date(_TODAY); ts.setHours(hour, Math.floor(Math.random() * 60), 0, 0);
+  const engRate = parseFloat((0.10 + Math.random() * 0.14).toFixed(3)); // always below 0.25
+  return {
+    id: i + 1,
+    camera_id:       "cam_01",
+    timestamp:       ts.toISOString(),
+    engagement_rate: engRate,
+    viewer_count:    Math.floor(1 + Math.random() * 4),
+    message:         _ALERT_MSGS[i % _ALERT_MSGS.length],
+  };
+});
+
 const DEMO_DWELL = [
   { id: 1, camera_id: "cam_01", start_time: "", end_time: "", duration_seconds: 47.3, peak_count: 3, avg_count: 2.1 },
   { id: 2, camera_id: "cam_01", start_time: "", end_time: "", duration_seconds: 23.1, peak_count: 2, avg_count: 1.5 },
@@ -172,7 +194,7 @@ export default function App() {
 
   // ── Alerts polling (30s) ─────────────────────────────────────────────────
   const alertsFn = useCallback(
-    () => demoMode ? Promise.resolve([]) : fetchAlerts(50, activeCameraId),
+    () => demoMode ? Promise.resolve(DEMO_ALERTS) : fetchAlerts(50, activeCameraId),
     [demoMode, activeCameraId]
   );
   const { data: alertsData } = usePolling(alertsFn, 30_000);
